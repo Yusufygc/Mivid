@@ -119,23 +119,56 @@ export class FFmpegCommandBuilder {
         const nextBase = `comp_${clipIndex}`;
 
         // Trim & timing for clip: shift PTS by startTime so overlay filter matches timestamps correctly!
-        filterGraph.push(
-          `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${clip.duration.toFixed(2)},setpts=PTS-STARTPTS+${clip.startTime.toFixed(2)}/TB[${clipTag}]`
-        );
+        let clipFilters = `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${clip.duration.toFixed(2)},setpts=PTS-STARTPTS+${clip.startTime.toFixed(2)}/TB`;
+
+        // Add alpha channel support for opacity and transitions
+        clipFilters += `,format=yuva420p`;
+
+        const startTimeNum = clip.startTime;
+        const endTimeNum = clip.startTime + clip.duration;
+        const startTime = startTimeNum.toFixed(2);
+        const endTime = endTimeNum.toFixed(2);
+
+        // Opacity
+        const opacity = clip.transform?.opacity ?? 1;
+        if (opacity < 1) {
+          clipFilters += `,colorchannelmixer=aa=${opacity.toFixed(2)}`;
+        }
+
+        // Transitions (Alpha fading)
+        if (clip.transitionIn && (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black')) {
+          clipFilters += `,fade=t=in:st=${startTime}:d=${clip.transitionIn.duration.toFixed(2)}:alpha=1`;
+        }
+        if (clip.transitionOut && (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black')) {
+          const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
+          clipFilters += `,fade=t=out:st=${outStart}:d=${clip.transitionOut.duration.toFixed(2)}:alpha=1`;
+        }
+
+        filterGraph.push(`${clipFilters}[${clipTag}]`);
 
         // Scale & Transform
         const scaleW = Math.round(project.width * (clip.transform?.scaleX ?? 1));
         const scaleH = Math.round(project.height * (clip.transform?.scaleY ?? 1));
         filterGraph.push(`[${clipTag}]scale=${scaleW}:${scaleH}[${scaledTag}]`);
 
-        // Overlay with start time
-        const startTime = clip.startTime.toFixed(2);
-        const endTime = (clip.startTime + clip.duration).toFixed(2);
         const posX = Math.round(clip.transform?.x ?? 0);
         const posY = Math.round(clip.transform?.y ?? 0);
 
+        let xExpr: string | number = posX;
+        
+        if (clip.transitionIn && (clip.transitionIn.type === 'slide' || clip.transitionIn.type === 'wipe')) {
+          const d = clip.transitionIn.duration.toFixed(2);
+          xExpr = `'if(lt(t,${startTime}+${d}), ${posX}+W*(1-(t-${startTime})/${d}), ${posX})'`;
+        }
+        
+        if (clip.transitionOut && (clip.transitionOut.type === 'slide' || clip.transitionOut.type === 'wipe')) {
+          const d = clip.transitionOut.duration.toFixed(2);
+          const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
+          xExpr = `'if(gt(t,${outStart}), ${posX}-W*(t-${outStart})/${d}, ${posX})'`;
+        }
+
         filterGraph.push(
-          `[${currentVideoBase}][${scaledTag}]overlay=x=${posX}:y=${posY}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
+          `[${currentVideoBase}][${scaledTag}]overlay=x=${xExpr}:y=${posY}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
         );
 
         currentVideoBase = nextBase;

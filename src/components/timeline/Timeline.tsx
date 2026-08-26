@@ -448,9 +448,34 @@ export const Timeline: React.FC = () => {
                             originalStart: clip.startTime,
                           });
                         }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'copy';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const rawData =
+                            e.dataTransfer.getData('application/x-transition') ||
+                            e.dataTransfer.getData('application/json') ||
+                            e.dataTransfer.getData('text/plain');
+                          if (rawData) {
+                            try {
+                              const parsed = JSON.parse(rawData);
+                              const transType = parsed.transitionType || parsed.type;
+                              if (transType && transType !== 'transition') {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const clickX = e.clientX - rect.left;
+                                const isLeft = clickX < rect.width / 2;
+                                useTimelineStore.getState().addTransition(clip.id, isLeft ? 'in' : 'out', transType);
+                              }
+                            } catch (err) {
+                              console.warn('Transition drop error:', err);
+                            }
+                          }
+                        }}
                         className={getClipStyle(clip)}
                       >
-                        {/* Left Trim Handle */}
+                        {/* Left Trim Handle & Drop Zone */}
                         <div
                           onMouseDown={(e) => {
                             e.stopPropagation();
@@ -465,16 +490,44 @@ export const Timeline: React.FC = () => {
                               originalOutPoint: clip.outPoint,
                             });
                           }}
-                          className="absolute left-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-primary cursor-ew-resize opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                          className="absolute left-0 top-0 bottom-0 w-4 bg-white/20 hover:bg-primary cursor-ew-resize opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-20"
                         />
+                        
+                        {/* Transition In Visual */}
+                        {clip.transitionIn && (
+                          <div 
+                            className="absolute left-0 top-0 bottom-0 bg-purple-500/70 flex flex-col items-center justify-center z-10 border-r border-purple-300 shadow-inner group/trans" 
+                            style={{ width: `${clip.transitionIn.duration * zoom}px` }}
+                          >
+                             <Layers className="w-3 h-3 text-white/90" />
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); useTimelineStore.getState().removeTransition(clip.id, 'in'); }}
+                               className="absolute -top-2 text-rose-500 opacity-0 group-hover/trans:opacity-100 bg-black/50 rounded-full p-0.5"
+                             ><X className="w-2 h-2"/></button>
+                          </div>
+                        )}
 
                         {/* Clip Label */}
-                        <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1">
+                        <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1 z-10 relative">
                           {clip.type === 'text' && <Type className="w-3 h-3 text-amber-300 flex-shrink-0" />}
                           {clip.name}
                         </span>
 
-                        {/* Right Trim Handle */}
+                        {/* Transition Out Visual */}
+                        {clip.transitionOut && (
+                          <div 
+                            className="absolute right-0 top-0 bottom-0 bg-purple-500/70 flex flex-col items-center justify-center z-10 border-l border-purple-300 shadow-inner group/trans" 
+                            style={{ width: `${clip.transitionOut.duration * zoom}px` }}
+                          >
+                             <Layers className="w-3 h-3 text-white/90" />
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); useTimelineStore.getState().removeTransition(clip.id, 'out'); }}
+                               className="absolute -top-2 text-rose-500 opacity-0 group-hover/trans:opacity-100 bg-black/50 rounded-full p-0.5"
+                             ><X className="w-2 h-2"/></button>
+                          </div>
+                        )}
+
+                        {/* Right Trim Handle & Drop Zone */}
                         <div
                           onMouseDown={(e) => {
                             e.stopPropagation();
@@ -489,7 +542,7 @@ export const Timeline: React.FC = () => {
                               originalOutPoint: clip.outPoint,
                             });
                           }}
-                          className="absolute right-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-primary cursor-ew-resize opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                          className="absolute right-0 top-0 bottom-0 w-4 bg-white/20 hover:bg-primary cursor-ew-resize opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity z-20"
                         />
                       </div>
                     );

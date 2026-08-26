@@ -19,10 +19,10 @@ Bu belge, **CapCut Video Editör** masaüstü uygulamasının katmanlarını, ve
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
 │                    Çekirdek Motorlar & Servisler            │
-│  - Timeline Engine (Split, Trim, Snap, Track Management)     │
-│  - Preview Engine (Canvas Real-time Multi-layer Renderer)    │
+│  - Timeline Engine (Çakışma Önleme, Otomatik Kanal, Snap, Trim)│
+│  - Preview Engine (Master Hardware Clock, DOM-Attached Video)│
 │  - Command Manager (Undo/Redo Stack)                         │
-│  - Export Engine (FFmpeg Filter Graph Builder)               │
+│  - Export Engine (FFmpeg PTS Zaman Kaydırma, filter_complex) │
 │  - Logger Service (Structured Levelled Logging)              │
 └──────────────────────────────┬──────────────────────────────┘
                                │ IPC (Tauri v2 Events / Commands)

@@ -38,6 +38,12 @@ export interface TextBackgroundBox {
   borderRadius: number;
 }
 
+export interface TextAnimation {
+  in: 'none' | 'typewriter' | 'slide' | 'zoom';
+  out: 'none' | 'fade';
+  duration: number;
+}
+
 export interface TextProperties {
   content: string;
   fontFamily: string;
@@ -49,6 +55,19 @@ export interface TextProperties {
   stroke?: TextStroke;
   shadow?: TextShadow;
   backgroundBox?: TextBackgroundBox;
+  animation?: TextAnimation;
+}
+
+export interface Transition {
+  type: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe';
+  duration: number;
+}
+
+export interface ColorGrading {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  lut?: string;
 }
 
 export interface Clip {
@@ -65,6 +84,9 @@ export interface Clip {
   transform: Transform;
   audio: AudioSettings;
   text?: TextProperties;
+  transitionIn?: Transition;
+  transitionOut?: Transition;
+  colorGrading?: ColorGrading;
 }
 
 export interface Track {

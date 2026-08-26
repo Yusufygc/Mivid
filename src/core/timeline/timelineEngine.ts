@@ -7,20 +7,28 @@ export interface SplitResult {
   rightClip: Clip;
 }
 
+export interface ClipTimeInterval {
+  startTime: number;
+  duration: number;
+  transitionIn?: { duration: number };
+  transitionOut?: { duration: number };
+}
+
 export class TimelineEngine {
   /**
    * Checks if two time intervals overlap
    */
   public static doesClipOverlap(
-    clipA: { startTime: number; duration: number },
-    clipB: { startTime: number; duration: number }
+    clipA: ClipTimeInterval,
+    clipB: ClipTimeInterval
   ): boolean {
-    const startA = clipA.startTime;
-    const endA = clipA.startTime + clipA.duration;
-    const startB = clipB.startTime;
-    const endB = clipB.startTime + clipB.duration;
+    const startA = clipA.startTime + (clipA.transitionIn?.duration || 0);
+    const endA = clipA.startTime + clipA.duration - (clipA.transitionOut?.duration || 0);
+    const startB = clipB.startTime + (clipB.transitionIn?.duration || 0);
+    const endB = clipB.startTime + clipB.duration - (clipB.transitionOut?.duration || 0);
     return startA < endB - 0.001 && endA > startB + 0.001;
   }
+
 
   /**
    * Checks if a given track is free from any clip collision in the specified [startTime, startTime + duration] range
@@ -29,10 +37,12 @@ export class TimelineEngine {
     track: Track,
     startTime: number,
     duration: number,
-    ignoreClipId?: string
+    ignoreClipId?: string,
+    transitionIn?: { duration: number },
+    transitionOut?: { duration: number }
   ): boolean {
     return track.clips.every(
-      (c) => c.id === ignoreClipId || !TimelineEngine.doesClipOverlap({ startTime, duration }, c)
+      (c) => c.id === ignoreClipId || !TimelineEngine.doesClipOverlap({ startTime, duration, transitionIn, transitionOut }, c)
     );
   }
 
@@ -43,18 +53,26 @@ export class TimelineEngine {
     track: Track,
     clipId: string,
     candidateStart: number,
-    duration: number
+    duration: number,
+    transitionIn?: { duration: number },
+    transitionOut?: { duration: number }
   ): number {
     const otherClips = track.clips.filter((c) => c.id !== clipId).sort((a, b) => a.startTime - b.startTime);
     let clampedStart = Math.max(0, candidateStart);
 
     for (const other of otherClips) {
-      // If candidate start falls inside an existing clip
-      if (clampedStart < other.startTime + other.duration && clampedStart + duration > other.startTime) {
+      // Adjusted bounds to allow overlap for transition durations
+      const otherEffectiveStart = other.startTime + (other.transitionIn?.duration || 0);
+      const otherEffectiveEnd = other.startTime + other.duration - (other.transitionOut?.duration || 0);
+      const candidateEffectiveStart = clampedStart + (transitionIn?.duration || 0);
+      const candidateEffectiveEnd = clampedStart + duration - (transitionOut?.duration || 0);
+
+      // If candidate falls inside an existing clip
+      if (candidateEffectiveStart < otherEffectiveEnd && candidateEffectiveEnd > otherEffectiveStart) {
         if (candidateStart + duration / 2 < other.startTime + other.duration / 2) {
-          clampedStart = Math.max(0, other.startTime - duration);
+          clampedStart = Math.max(0, otherEffectiveStart - duration + (transitionOut?.duration || 0));
         } else {
-          clampedStart = other.startTime + other.duration;
+          clampedStart = otherEffectiveEnd - (transitionIn?.duration || 0);
         }
       }
     }

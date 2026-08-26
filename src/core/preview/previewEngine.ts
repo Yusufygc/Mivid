@@ -414,9 +414,35 @@ export class PreviewEngine {
       const opacity = clip.transform?.opacity ?? 1;
       const rotation = clip.transform?.rotation ?? 0;
 
-      this.ctx.globalAlpha = opacity;
+      const timeInClip = this.currentTime - clip.startTime;
+      const timeLeftInClip = (clip.startTime + clip.duration) - this.currentTime;
 
-      this.ctx.translate(width / 2 + posX, height / 2 + posY);
+      let transitionAlpha = 1;
+      let transitionTranslateX = 0;
+
+      // Transition In
+      if (clip.transitionIn && timeInClip >= 0 && timeInClip < clip.transitionIn.duration) {
+        const progress = timeInClip / clip.transitionIn.duration;
+        if (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black') {
+          transitionAlpha = progress;
+        } else if (clip.transitionIn.type === 'slide' || clip.transitionIn.type === 'wipe') {
+          transitionTranslateX = width * (1 - progress);
+        }
+      }
+
+      // Transition Out
+      if (clip.transitionOut && timeLeftInClip >= 0 && timeLeftInClip < clip.transitionOut.duration) {
+        const progress = timeLeftInClip / clip.transitionOut.duration;
+        if (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black') {
+          transitionAlpha = progress;
+        } else if (clip.transitionOut.type === 'slide' || clip.transitionOut.type === 'wipe') {
+          transitionTranslateX = -width * (1 - progress);
+        }
+      }
+
+      this.ctx.globalAlpha = opacity * transitionAlpha;
+
+      this.ctx.translate(width / 2 + posX + transitionTranslateX, height / 2 + posY);
       if (rotation !== 0) {
         this.ctx.rotate((rotation * Math.PI) / 180);
       }

@@ -64,6 +64,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ## ⚡ Faz 4: FFmpeg Entegrasyonu & Canlı İlerlemeli Video Dışa Aktarma (Export)
 - [x] FFmpeg `drawtext` filtresi ile metinlerin tam senkron videoya basılması (`src/core/export/ffmpegBuilder.ts`)
+- [x] **FFmpeg `setpts` Zaman Damgası Senkronizasyonu:** Çoklu video kanallarında (V1, V2 vb.) `overlay` edilirken, ikinci videoların donmaması ve ortadan başlamaması için `setpts=PTS-STARTPTS+startTime/TB` zaman kaydırma mimarisinin eklenmesi.
 - [x] Dinamik render süresi (video ne kadar uzunsa tam o kadar render alır; fazladan siyah ekran süresi basılmaz)
 - [x] Canlı FFmpeg stdout/stderr ayrıştırma ve Tauri IPC olay akışı (`export-progress`)
 - [x] Windows Explorer `/select,` ile üretilen MP4 dosyasını doğrudan seçili açma

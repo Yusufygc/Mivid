@@ -7,25 +7,27 @@ CapCut benzeri, modern, hafif ve genişletilebilir bir masaüstü video düzenle
 ## ✨ Özellikler
 
 - 🎬 **Çok Kanallı Zaman Çizelgesi (Multi-track Timeline):**
-  - Ana Video (V1), Bindirme / PiP Katmanı (V2) ve Ses / Müzik (A1) kanalları.
-  - Klip bölme (Split - `Ctrl+B` / Makas).
-  - Klip kırpma (Sol ve Sağ Trim tutamaçları ile anında süre/in-point ayarlama).
-  - Sürükle & Bırak ile klibi zaman çizelgesinde taşıma.
+  - Akıllı Katmanlama: Otomatik yeni kanal oluşturma ve çakışma önleme.
+  - Video (V1, V2), Ses (A1, A2) ve Metin (T1, T2) kanalları.
+  - Klip bölme (Split - `Ctrl+B`), Sol/Sağ Trim (Kırpma) ve sürükle-bırak sıralama.
+  - Sınırsız dikey kaydırma ve yapışkan zaman cetveli (Sticky Ruler).
   - Manyetik Yapışma (Magnetic Snapping) ve dinamik Zoom kontrolü.
-  - Kanal gizleme (Hide), sessize alma (Mute) ve kilitleme (Lock).
-- 📺 **Gerçek Zamanlı Önizleme Oynatıcısı (Canvas Composition Player):**
-  - Çoklu video ve katmanları anında ekranda bindirme (Overlay / Picture-in-Picture).
-  - Dinamik en-boy oranları (16:9 Yatay, 9:16 TikTok/Reels, 1:1 Kare, 4:3, 21:9).
-  - Canlı Timecode (SS:DD:SS:KK) ve transport kontrolleri.
+- 📺 **Gerçek Zamanlı Önizleme Oynatıcısı (Canvas Player):**
+  - **Master Hardware Clock:** Oynatılan videonun GPU saatine kilitlenen, sıfır-gecikmeli (Zero-lag), pürüzsüz çoklu video oynatma altyapısı.
+  - Dinamik en-boy oranları (16:9, 9:16, 1:1 vb.) ve katman bindirme (PiP).
+- 🔤 **Metin ve Başlık Sistemi:**
+  - Zengin metin düzenleyici: Yazı tipi, boyut, kalınlık/italik, hizalama.
+  - Özel stiller: Kenarlık (Stroke), Arka plan kutusu, Gölge (Shadow).
+  - Sinematik, Neon, Kutulu Altyazı gibi hazır şablonlar.
 - 🎛️ **Özellikler Paneli (Inspector):**
-  - Konum X/Y, Ölçek (Scale), Opaklık (Opacity), Döndürme (Rotation).
-  - Ses seviyesi (Volume) ve Mute kontrolü.
+  - Video İçi Başlangıç (In-Point) göstergesi ve anında sıfırlama.
+  - Konum X/Y, Ölçek, Opaklık ve Döndürme kontrolleri.
 - 📂 **Medya Havuzu (Asset Pool):**
   - Video, Ses ve Görsel dosyalarını sürükle-bırak veya dosya seçici ile içe aktarma.
   - Otomatik küçük resim (Thumbnail) ve süre tespiti.
 - ⚡ **FFmpeg Dışa Aktarma Motoru (Export Engine):**
-  - Zaman çizelgesindeki tüm kırpmaları, katmanları ve ses miksini tek bir optimize `filter_complex` komutuna dönüştürür.
-  - Hızlı H.264 / AAC render çıktısı.
+  - Zaman çizelgesindeki tüm klipleri (`setpts` ile saniyesi saniyesine), metinleri (`drawtext` filtresi) ve sesleri (`adelay`) tek bir karmaşık `filter_complex` komutuna dönüştürür.
+  - Hızlı ve kayıpsız H.264 / AAC render çıktısı.
 - 🏗️ **Yazılım Mimarisi & Standartlar:**
   - **SOLID, Clean Code, DRY, KISS** ilkeleri.
   - Undo / Redo komut deseni (`CommandManager`).

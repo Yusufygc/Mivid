@@ -39,6 +39,8 @@ interface TimelineStoreState {
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
+  addTransition: (clipId: string, position: 'in' | 'out', transitionType: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe') => void;
+  removeTransition: (clipId: string, position: 'in' | 'out') => void;
 }
 
 const syncProjectDuration = (tracks: Track[]) => {
@@ -459,5 +461,100 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
     syncProjectDuration(newTracks);
 
     set({ tracks: newTracks });
+  },
+
+  addTransition: (clipId, position, transitionType) => {
+    const { tracks } = get();
+    const duration = 1.0; // default 1 second transition
+    
+    let updatedClip: Clip | null = null;
+
+    const newTracks = tracks.map((t) => {
+      const clipIndex = t.clips.findIndex((c) => c.id === clipId);
+      if (clipIndex !== -1) {
+        const clip = t.clips[clipIndex];
+        const newClip = { ...clip };
+        
+        if (position === 'in') {
+          newClip.transitionIn = { type: transitionType, duration };
+          // If we add an in-transition, and there's a previous clip, we need to shift THIS clip left by duration
+          if (clipIndex > 0) {
+            const prevClip = t.clips[clipIndex - 1];
+            // Only shift if they are already adjacent
+            if (Math.abs(prevClip.startTime + prevClip.duration - newClip.startTime) < 0.1) {
+              newClip.startTime = Math.max(0, newClip.startTime - duration);
+            }
+          }
+        } else {
+          newClip.transitionOut = { type: transitionType, duration };
+        }
+        
+        updatedClip = newClip;
+        
+        const newClips = [...t.clips];
+        newClips[clipIndex] = newClip;
+        
+        // If we added a transition out, and there's a next clip adjacent, we shift the NEXT clip left
+        if (position === 'out' && clipIndex < newClips.length - 1) {
+          const nextClip = newClips[clipIndex + 1];
+          if (Math.abs(newClip.startTime + newClip.duration - nextClip.startTime) < 0.1) {
+            const updatedNextClip = { ...nextClip, startTime: Math.max(0, nextClip.startTime - duration) };
+            newClips[clipIndex + 1] = updatedNextClip;
+          }
+        }
+        
+        return { ...t, clips: newClips.sort((a, b) => a.startTime - b.startTime) };
+      }
+      return t;
+    });
+
+    if (updatedClip) {
+      syncProjectDuration(newTracks);
+      set({ tracks: newTracks });
+      Logger.info('useTimelineStore', `Added ${position} transition ${transitionType} to clip ${clipId}`);
+    }
+  },
+
+  removeTransition: (clipId, position) => {
+    const { tracks } = get();
+    
+    const newTracks = tracks.map((t) => {
+      const clipIndex = t.clips.findIndex((c) => c.id === clipId);
+      if (clipIndex !== -1) {
+        const clip = t.clips[clipIndex];
+        const newClip = { ...clip };
+        const durationToRevert = position === 'in' ? (newClip.transitionIn?.duration || 0) : (newClip.transitionOut?.duration || 0);
+        
+        if (position === 'in') {
+          delete newClip.transitionIn;
+          // Revert the left shift
+          if (clipIndex > 0 && durationToRevert > 0) {
+            newClip.startTime += durationToRevert;
+          }
+        } else {
+          delete newClip.transitionOut;
+        }
+        
+        const newClips = [...t.clips];
+        newClips[clipIndex] = newClip;
+        
+        // Revert shift on next clip if we are removing transitionOut
+        if (position === 'out' && clipIndex < newClips.length - 1 && durationToRevert > 0) {
+          const nextClip = newClips[clipIndex + 1];
+          // Check if they were overlapped
+          if (Math.abs((newClip.startTime + newClip.duration - durationToRevert) - nextClip.startTime) < 0.1) {
+            const updatedNextClip = { ...nextClip, startTime: nextClip.startTime + durationToRevert };
+            newClips[clipIndex + 1] = updatedNextClip;
+          }
+        }
+
+        return { ...t, clips: newClips.sort((a, b) => a.startTime - b.startTime) };
+      }
+      return t;
+    });
+
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks });
+    Logger.info('useTimelineStore', `Removed ${position} transition from clip ${clipId}`);
   },
 }));

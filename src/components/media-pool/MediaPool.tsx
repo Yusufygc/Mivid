@@ -1,13 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { useAssetStore } from '@/stores/useAssetStore';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Upload, Plus, Film, Music, Image as ImageIcon, Trash2, Clock, Type } from 'lucide-react';
+import { Upload, Plus, Film, Music, Image as ImageIcon, Trash2, Clock, Type, Layers } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 import { MediaAsset } from '@/types/asset';
 import { TextPresets } from './TextPresets';
+import { TransitionPresets } from './TransitionPresets';
 
 export const MediaPool: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'media' | 'text'>('media');
+  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'transitions'>('media');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { assets, importFile, importFromPath, removeAsset } = useAssetStore();
   const { addClipFromAsset } = useTimelineStore();
@@ -70,7 +71,7 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <Film className="w-3.5 h-3.5" />
-          <span>Medyalar ({assetList.length})</span>
+          <span>Medyalar</span>
         </button>
 
         <button
@@ -82,13 +83,29 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <Type className="w-3.5 h-3.5" />
-          <span>Metinler & Başlık</span>
+          <span>Metinler</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('transitions')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'transitions'
+              ? 'bg-surface text-primary border border-surface-border shadow-sm'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-surface-light/40'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Geçişler</span>
         </button>
       </div>
 
       {activeTab === 'text' ? (
         <div className="flex-1 overflow-y-auto">
           <TextPresets />
+        </div>
+      ) : activeTab === 'transitions' ? (
+        <div className="flex-1 overflow-y-auto">
+          <TransitionPresets />
         </div>
       ) : (
         <>

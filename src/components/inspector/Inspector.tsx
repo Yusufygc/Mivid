@@ -165,6 +165,110 @@ export const Inspector: React.FC = () => {
           </div>
         )}
 
+        {/* Transitions Settings (for video & overlay clips) */}
+        {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && (
+          <div className="space-y-4 pt-2 border-t border-surface-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+                <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                <span>Geçiş Efektleri (Transitions)</span>
+              </div>
+            </div>
+
+            {/* Transition In */}
+            <div className="space-y-2 bg-surface-light/30 p-2.5 rounded-lg border border-surface-border/50">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-gray-300">Giriş Geçişi (In)</span>
+                {selectedClip.transitionIn && (
+                  <button
+                    onClick={() => useTimelineStore.getState().removeTransition(selectedClip!.id, 'in')}
+                    className="text-[10px] text-rose-400 hover:text-rose-300"
+                  >
+                    Kaldır
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'cross-dissolve', name: 'Çapraz' },
+                  { id: 'fade-to-black', name: 'Kararma' },
+                  { id: 'slide', name: 'Kaydırma' },
+                  { id: 'wipe', name: 'Silme' },
+                ].map((t) => {
+                  const isActive = selectedClip!.transitionIn?.type === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() =>
+                        useTimelineStore
+                          .getState()
+                          .addTransition(
+                            selectedClip!.id,
+                            'in',
+                            t.id as 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe'
+                          )
+                      }
+                      className={`py-1 px-2 rounded text-[11px] font-medium transition-all ${
+                        isActive
+                          ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                          : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                      }`}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Transition Out */}
+            <div className="space-y-2 bg-surface-light/30 p-2.5 rounded-lg border border-surface-border/50">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-gray-300">Çıkış Geçişi (Out)</span>
+                {selectedClip.transitionOut && (
+                  <button
+                    onClick={() => useTimelineStore.getState().removeTransition(selectedClip!.id, 'out')}
+                    className="text-[10px] text-rose-400 hover:text-rose-300"
+                  >
+                    Kaldır
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'cross-dissolve', name: 'Çapraz' },
+                  { id: 'fade-to-black', name: 'Kararma' },
+                  { id: 'slide', name: 'Kaydırma' },
+                  { id: 'wipe', name: 'Silme' },
+                ].map((t) => {
+                  const isActive = selectedClip!.transitionOut?.type === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() =>
+                        useTimelineStore
+                          .getState()
+                          .addTransition(
+                            selectedClip!.id,
+                            'out',
+                            t.id as 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe'
+                          )
+                      }
+                      className={`py-1 px-2 rounded text-[11px] font-medium transition-all ${
+                        isActive
+                          ? 'bg-purple-600 text-white font-semibold shadow-sm'
+                          : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                      }`}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Audio Settings (for video & audio clips) */}
         {selectedClip.type !== 'text' && (
           <div className="space-y-4 pt-2 border-t border-surface-border">

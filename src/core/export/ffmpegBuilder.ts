@@ -19,16 +19,35 @@ export class FFmpegCommandBuilder {
     tracks: Track[],
     assets: Map<string, MediaAsset>,
     options: ExportOptions
-  ): { args: string[]; filterComplex: string } {
+  ): { args: string[]; filterComplex: string; actualDuration: number } {
     Logger.info('FFmpegCommandBuilder', 'Building FFmpeg export command', {
       resolution: `${project.width}x${project.height}`,
       tracksCount: tracks.length,
     });
 
+    // 1. Calculate actual duration from the end of the latest clip
+    let maxClipEnd = 0;
+    for (const track of tracks) {
+      if (track.isHidden) continue;
+      for (const clip of track.clips) {
+        const end = clip.startTime + clip.duration;
+        if (end > maxClipEnd) {
+          maxClipEnd = end;
+        }
+      }
+    }
+
+    if (maxClipEnd <= 0) {
+      throw new Error('Zaman çizelgesinde dışa aktarılacak klip bulunamadı.');
+    }
+
+    const exportDuration = Math.round(maxClipEnd * 100) / 100;
+    Logger.info('FFmpegCommandBuilder', `Export duration dynamically calculated: ${exportDuration}s`);
+
     const inputs: string[] = [];
     const assetIndexMap = new Map<string, number>();
 
-    // 1. Gather all unique media assets used in the timeline
+    // 2. Gather unique media assets
     let currentInputIndex = 0;
     for (const track of tracks) {
       if (track.isHidden) continue;
@@ -45,23 +64,22 @@ export class FFmpegCommandBuilder {
     }
 
     if (currentInputIndex === 0) {
-      throw new Error('No valid media clips found to export.');
+      throw new Error('Geçerli medya dosyası bulunamadı.');
     }
 
     const filterGraph: string[] = [];
     const videoStreams: string[] = [];
     const audioStreams: string[] = [];
 
-    // 2. Base black canvas of project dimensions and duration
+    // 3. Base black canvas of exact project dimensions and exact clip duration
     const baseCanvasLabel = 'base_v';
     filterGraph.push(
-      `color=c=${project.backgroundColor || 'black'}:s=${project.width}x${project.height}:r=${project.fps}:d=${project.duration.toFixed(2)}[${baseCanvasLabel}]`
+      `color=c=${project.backgroundColor || '#000000'}:s=${project.width}x${project.height}:r=${project.fps}:d=${exportDuration.toFixed(2)}[${baseCanvasLabel}]`
     );
 
     let currentVideoBase = baseCanvasLabel;
     let clipIndex = 0;
 
-    // Collect all video clips sorted by track order and start time
     const videoTracks = tracks.filter((t) => (t.type === 'video' || t.type === 'overlay') && !t.isHidden);
 
     for (const track of videoTracks) {
@@ -99,7 +117,7 @@ export class FFmpegCommandBuilder {
     }
     videoStreams.push(currentVideoBase);
 
-    // 3. Audio clips mixing
+    // 4. Audio clips mixing
     let audioClipIndex = 0;
     for (const track of tracks) {
       if (track.isMuted) continue;
@@ -132,7 +150,7 @@ export class FFmpegCommandBuilder {
 
     const filterComplexStr = filterGraph.join('; ');
 
-    // 4. Construct complete argument array
+    // 5. Construct argument array
     const args: string[] = ['-y', ...inputs, '-filter_complex', filterComplexStr, '-map', `[${videoStreams[0]}]`];
 
     if (finalAudioLabel) {
@@ -147,10 +165,10 @@ export class FFmpegCommandBuilder {
       '-pix_fmt',
       'yuv420p',
       '-t',
-      project.duration.toFixed(2),
+      exportDuration.toFixed(2),
       options.outputPath
     );
 
-    return { args, filterComplex: filterComplexStr };
+    return { args, filterComplex: filterComplexStr, actualDuration: exportDuration };
   }
 }

@@ -49,19 +49,26 @@ fn select_media_files() -> Vec<String> {
 
 #[tauri::command]
 fn open_file_location(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    let dir = if p.is_dir() {
-        p
-    } else {
-        p.parent().unwrap_or(p)
-    };
-
     #[cfg(target_os = "windows")]
     {
+        let win_path = path.replace('/', "\\");
+        println!("[Tauri IPC] Opening explorer with file selected: {}", win_path);
+        
+        // /select,<path> highlights the specific file in its folder
         Command::new("explorer")
+            .arg(format!("/select,{}", win_path))
+            .spawn()
+            .map_err(|e| format!("Dosya konumu açılamadı: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let p = Path::new(&path);
+        let dir = if p.is_dir() { p } else { p.parent().unwrap_or(p) };
+        Command::new("open")
             .arg(dir)
             .spawn()
-            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+            .map_err(|e| format!("Failed to open directory: {}", e))?;
     }
 
     Ok(())
@@ -101,7 +108,7 @@ async fn run_ffmpeg_export(
             )
         })?;
 
-    let total_secs = total_duration.unwrap_or(30.0);
+    let total_secs = total_duration.unwrap_or(30.0).max(0.1);
     let mut all_stderr = String::new();
 
     if let Some(stderr) = child.stderr.take() {
@@ -116,7 +123,6 @@ async fn run_ffmpeg_export(
                     let time_substr = &l[time_idx + 5..];
                     if let Some(end_idx) = time_substr.find(' ') {
                         let time_val_str = &time_substr[..end_idx];
-                        // Convert time string to seconds
                         let parts: Vec<&str> = time_val_str.split(':').collect();
                         if parts.len() == 3 {
                             if let (Ok(h), Ok(m), Ok(s)) = (

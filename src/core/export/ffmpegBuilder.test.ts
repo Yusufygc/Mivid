@@ -13,7 +13,7 @@ describe('FFmpegCommandBuilder', () => {
     fps: 30,
     aspectRatio: '16:9',
     duration: 10.0,
-    backgroundColor: 'black',
+    backgroundColor: '#000000',
   };
 
   const mockAsset: MediaAsset = {
@@ -29,7 +29,7 @@ describe('FFmpegCommandBuilder', () => {
 
   const mockAssets = new Map<string, MediaAsset>([['asset-1', mockAsset]]);
 
-  it('generates valid FFmpeg args for a video clip with trim and overlay', () => {
+  it('generates valid FFmpeg args for a video clip with trim, overlay and dynamic duration', () => {
     const tracks: Track[] = [
       {
         id: 't1',
@@ -61,10 +61,11 @@ describe('FFmpegCommandBuilder', () => {
       outputPath: 'C:/media/output.mp4',
     });
 
+    expect(result.actualDuration).toBe(7.0); // 2.0s start + 5.0s duration = 7.0s
     expect(result.args).toContain('-i');
     expect(result.args).toContain('C:/media/sample.mp4');
     expect(result.args).toContain('-filter_complex');
-    expect(result.filterComplex).toContain('color=c=black:s=1920x1080:r=30:d=10.00[base_v]');
+    expect(result.filterComplex).toContain('color=c=#000000:s=1920x1080:r=30:d=7.00[base_v]');
     expect(result.filterComplex).toContain('trim=start=1.00:duration=5.00');
     expect(result.filterComplex).toContain("overlay=x=0:y=0:enable='between(t,2.00,7.00)'");
     expect(result.args).toContain('C:/media/output.mp4');
@@ -87,6 +88,6 @@ describe('FFmpegCommandBuilder', () => {
       FFmpegCommandBuilder.buildExportCommand(mockProject, emptyTracks, mockAssets, {
         outputPath: 'out.mp4',
       })
-    ).toThrow('No valid media clips found to export.');
+    ).toThrow('Zaman çizelgesinde dışa aktarılacak klip bulunamadı.');
   });
 });

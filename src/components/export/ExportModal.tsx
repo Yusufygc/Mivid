@@ -25,7 +25,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [commandInfo, setCommandInfo] = useState<{ args: string[]; filterComplex: string } | null>(null);
+  const [commandInfo, setCommandInfo] = useState<{ args: string[]; filterComplex: string; actualDuration: number } | null>(null);
   const [isTauriEnv, setIsTauriEnv] = useState<boolean>(false);
   const [exportFinished, setExportFinished] = useState(false);
 
@@ -59,6 +59,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   }, [isTauriEnv]);
 
   if (!isOpen) return null;
+
+  // Calculate actual content duration
+  let maxClipEnd = 0;
+  for (const track of tracks) {
+    for (const clip of track.clips) {
+      const end = clip.startTime + clip.duration;
+      if (end > maxClipEnd) maxClipEnd = end;
+    }
+  }
+  const estimatedDuration = maxClipEnd > 0 ? maxClipEnd.toFixed(1) : project.duration.toFixed(1);
 
   const handleGeneratePreview = () => {
     try {
@@ -94,7 +104,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         await invoke('run_ffmpeg_export', {
           args: result.args,
           outputPath: outputPath,
-          totalDuration: project.duration,
+          totalDuration: result.actualDuration,
         });
 
         setProgress(100);
@@ -179,7 +189,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           <div className="bg-surface-light/60 p-3 rounded-xl border border-surface-border flex items-center justify-between text-xs">
             <div>
               <p className="font-semibold text-white">{project.name}</p>
-              <p className="text-gray-400 mt-0.5 font-mono">{project.width}x{project.height} • {project.fps} FPS • {project.duration}s</p>
+              <p className="text-gray-400 mt-0.5 font-mono">{project.width}x{project.height} • {project.fps} FPS • {estimatedDuration}s Gerçek Süre</p>
             </div>
             <span className="px-2.5 py-1 rounded bg-primary/10 text-primary font-mono font-medium border border-primary/20">
               H.264 / AAC
@@ -247,7 +257,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               </div>
               <button
                 onClick={handleOpenFolder}
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-black font-semibold rounded-lg hover:brightness-110 active:scale-95 transition-all text-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-black font-semibold rounded-lg hover:brightness-110 active:scale-95 transition-all text-xs shadow-md"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
                 <span>Klasörde Göster</span>

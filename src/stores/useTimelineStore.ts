@@ -4,6 +4,7 @@ import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import { Logger } from '@/core/logger';
 import { clampTime } from '@/utils/time';
+import { useProjectStore } from './useProjectStore';
 
 interface TimelineStoreState {
   tracks: Track[];
@@ -37,6 +38,20 @@ interface TimelineStoreState {
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
 }
+
+const syncProjectDuration = (tracks: Track[]) => {
+  let maxEnd = 0;
+  for (const track of tracks) {
+    for (const clip of track.clips) {
+      const end = clip.startTime + clip.duration;
+      if (end > maxEnd) {
+        maxEnd = end;
+      }
+    }
+  }
+  const targetDuration = Math.max(5.0, Math.ceil(maxEnd));
+  useProjectStore.getState().setDuration(targetDuration);
+};
 
 const initialTracks: Track[] = [
   {
@@ -72,7 +87,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   tracks: initialTracks,
   selectedClipId: null,
   currentTime: 0,
-  zoom: 60, // 60px = 1 second
+  zoom: 60,
   isPlaying: false,
   snappingEnabled: true,
 
@@ -103,15 +118,19 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   addTrack: (type) => {
     const id = `track-${type}-${Date.now()}`;
     const name = type === 'audio' ? `Ses (${id.slice(-4)})` : `Video (${id.slice(-4)})`;
-    set((state) => ({
-      tracks: [...state.tracks, { id, name, type, isMuted: false, isLocked: false, isHidden: false, clips: [] }],
-    }));
+    set((state) => {
+      const newTracks = [...state.tracks, { id, name, type, isMuted: false, isLocked: false, isHidden: false, clips: [] }];
+      syncProjectDuration(newTracks);
+      return { tracks: newTracks };
+    });
   },
 
   deleteTrack: (trackId) => {
-    set((state) => ({
-      tracks: state.tracks.filter((t) => t.id !== trackId),
-    }));
+    set((state) => {
+      const newTracks = state.tracks.filter((t) => t.id !== trackId);
+      syncProjectDuration(newTracks);
+      return { tracks: newTracks };
+    });
   },
 
   toggleTrackMute: (trackId) => {
@@ -135,7 +154,6 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   addClipFromAsset: (asset, targetTrackId, requestedStartTime) => {
     const { tracks, currentTime } = get();
 
-    // Determine appropriate track
     let track = tracks.find((t) => t.id === targetTrackId);
     if (!track) {
       if (asset.type === 'audio') {
@@ -150,7 +168,6 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       return null;
     }
 
-    // Default start time is playhead or end of track clips
     let startTime = requestedStartTime !== undefined ? requestedStartTime : currentTime;
     if (requestedStartTime === undefined && track.clips.length > 0) {
       const lastClip = track.clips[track.clips.length - 1];
@@ -188,12 +205,16 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       },
     };
 
-    set((state) => ({
-      tracks: state.tracks.map((t) =>
-        t.id === track?.id ? { ...t, clips: [...t.clips, newClip].sort((a, b) => a.startTime - b.startTime) } : t
-      ),
+    const newTracks = tracks.map((t) =>
+      t.id === track?.id ? { ...t, clips: [...t.clips, newClip].sort((a, b) => a.startTime - b.startTime) } : t
+    );
+
+    syncProjectDuration(newTracks);
+
+    set({
+      tracks: newTracks,
       selectedClipId: newClip.id,
-    }));
+    });
 
     Logger.info('useTimelineStore', `Clip added to track ${track.name}`, newClip);
     return newClip;
@@ -201,11 +222,16 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   removeClip: (clipId) => {
     Logger.info('useTimelineStore', `Removing clip: ${clipId}`);
+    const { tracks } = get();
+    const newTracks = tracks.map((t) => ({
+      ...t,
+      clips: t.clips.filter((c) => c.id !== clipId),
+    }));
+
+    syncProjectDuration(newTracks);
+
     set((state) => ({
-      tracks: state.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.filter((c) => c.id !== clipId),
-      })),
+      tracks: newTracks,
       selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
     }));
   },
@@ -223,10 +249,13 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           .concat([splitResult.leftClip, splitResult.rightClip])
           .sort((a, b) => a.startTime - b.startTime);
 
-        set((state) => ({
-          tracks: state.tracks.map((t) => (t.id === track.id ? { ...t, clips: updatedClips } : t)),
+        const newTracks = tracks.map((t) => (t.id === track.id ? { ...t, clips: updatedClips } : t));
+        syncProjectDuration(newTracks);
+
+        set({
+          tracks: newTracks,
           selectedClipId: splitResult.rightClip.id,
-        }));
+        });
         return true;
       }
     }
@@ -243,25 +272,28 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   },
 
   updateClipTiming: (clipId, startTime, duration, inPoint, outPoint) => {
-    set((state) => ({
-      tracks: state.tracks.map((t) => ({
-        ...t,
-        clips: t.clips
-          .map((c) => {
-            if (c.id === clipId) {
-              return {
-                ...c,
-                startTime: clampTime(startTime),
-                duration: clampTime(duration),
-                inPoint: inPoint !== undefined ? clampTime(inPoint) : c.inPoint,
-                outPoint: outPoint !== undefined ? clampTime(outPoint) : c.outPoint,
-              };
-            }
-            return c;
-          })
-          .sort((a, b) => a.startTime - b.startTime),
-      })),
+    const { tracks } = get();
+    const newTracks = tracks.map((t) => ({
+      ...t,
+      clips: t.clips
+        .map((c) => {
+          if (c.id === clipId) {
+            return {
+              ...c,
+              startTime: clampTime(startTime),
+              duration: clampTime(duration),
+              inPoint: inPoint !== undefined ? clampTime(inPoint) : c.inPoint,
+              outPoint: outPoint !== undefined ? clampTime(outPoint) : c.outPoint,
+            };
+          }
+          return c;
+        })
+        .sort((a, b) => a.startTime - b.startTime),
     }));
+
+    syncProjectDuration(newTracks);
+
+    set({ tracks: newTracks });
   },
 
   updateClipTransform: (clipId, transformUpdates) => {
@@ -288,7 +320,6 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
     const { tracks } = get();
     let foundClip: Clip | null = null;
 
-    // Find and extract clip
     const cleanedTracks = tracks.map((t) => {
       const clip = t.clips.find((c) => c.id === clipId);
       if (clip) {
@@ -300,13 +331,14 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
     if (!foundClip) return;
 
-    // Insert into target track
-    set({
-      tracks: cleanedTracks.map((t) =>
-        t.id === targetTrackId
-          ? { ...t, clips: [...t.clips, foundClip!].sort((a, b) => a.startTime - b.startTime) }
-          : t
-      ),
-    });
+    const newTracks = cleanedTracks.map((t) =>
+      t.id === targetTrackId
+        ? { ...t, clips: [...t.clips, foundClip!].sort((a, b) => a.startTime - b.startTime) }
+        : t
+    );
+
+    syncProjectDuration(newTracks);
+
+    set({ tracks: newTracks });
   },
 }));

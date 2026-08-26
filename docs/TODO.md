@@ -18,7 +18,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] TypeScript Veri Modelleri (`types/asset.ts`, `types/timeline.ts`, `types/project.ts`, `types/command.ts`)
 - [x] Modüler Zustand Store'larının oluşturulması:
   - [x] `useAssetStore`: Medya yükleme (Native dosya yolu + Web Blob), timeout korumalı süre/metadata çıkarma, listeleme, silme
-  - [x] `useTimelineStore`: Çok kanallı izler, klip ekleme/taşıma/kesme/kırpma/silme, zoom, playhead
+  - [x] `useTimelineStore`: Çok kanallı izler, klip ekleme/taşıma/kesme/kırpma/silme, dinamik süre senkronizasyonu
   - [x] `useProjectStore`: Çözünürlük, en-boy oranı, FPS, proje ayarları
 - [x] Timeline Matematiksel & Mantıksal Motoru (`src/core/timeline/timelineEngine.ts`):
   - [x] Klip bölme (Split at playhead)
@@ -47,6 +47,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
   - [x] Bölme (Split) aracı & Kısayollar (`Ctrl+B`, `Delete`, `Space`, Ok tuşları)
   - [x] Manyetik Yapışma (Magnet snapping) ve Zaman çizelgesi Zoom kaydırıcısı
 - [x] **Gerçek Zamanlı 60 FPS Önizleme Oynatıcısı (`src/core/preview/previewEngine.ts`):**
+  - [x] Dinamik içerik süresi (klipler bittiğinde gereksiz siyah ekran oynatılmaz)
   - [x] Videoların ve harici seslerin eş zamanlı, net ve yüksek kaliteli ses çıkışı
   - [x] Tauri `assetProtocol` yetkileri açıldı (yerel disk dosyalarını anında oynatma)
   - [x] Asılı kalma (hanging metadata promise) koruması eklendi
@@ -58,9 +59,9 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ## ⚡ Faz 4: FFmpeg Entegrasyonu & Canlı İlerlemeli Video Dışa Aktarma (Export)
 - [x] FFmpeg `filter_complex` komut üreteci (`src/core/export/ffmpegBuilder.ts`)
+- [x] Dinamik render süresi (video ne kadar uzunsa tam o kadar render alır; fazladan siyah ekran süresi basılmaz)
 - [x] Canlı FFmpeg stdout/stderr ayrıştırma ve Tauri IPC olay akışı (`export-progress`)
-- [x] Canlı ilerleme çubuğu (%0 -> %100 ve geçen zaman göstergesi)
-- [x] Render tamamlandığında tek tıkla "Klasörde Göster (Open in Explorer)" butonu
+- [x] Windows Explorer `/select,` ile üretilen MP4 dosyasını doğrudan seçili açma
 - [x] Otomatik FFmpeg yolu bulucu (`C:\ffmpeg\bin\ffmpeg.exe`, `.\ffmpeg.exe` veya PATH)
 - [x] Otomatik hedef klasör oluşturma desteği (`create_dir_all` - Rust backend)
 

@@ -71,6 +71,56 @@ describe('FFmpegCommandBuilder', () => {
     expect(result.args).toContain('C:/media/output.mp4');
   });
 
+  it('generates drawtext filter for text clips correctly', () => {
+    const tracks: Track[] = [
+      {
+        id: 't-text',
+        name: 'Metin T1',
+        type: 'text',
+        isMuted: false,
+        isLocked: false,
+        isHidden: false,
+        clips: [
+          {
+            id: 'text-1',
+            trackId: 't-text',
+            assetId: 'text-asset-1',
+            name: 'Merhaba Dünya',
+            type: 'text',
+            startTime: 1.0,
+            duration: 4.0,
+            inPoint: 0,
+            outPoint: 4.0,
+            speed: 1,
+            transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex: 5 },
+            audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+            text: {
+              content: 'Merhaba Dünya',
+              fontFamily: 'Inter',
+              fontSize: 60,
+              color: '#FFFFFF',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              stroke: { color: '#000000', width: 3 },
+              backgroundBox: { enabled: true, color: 'rgba(0,0,0,0.7)', padding: 10, borderRadius: 8 },
+            },
+          },
+        ],
+      },
+    ];
+
+    const result = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+      outputPath: 'out.mp4',
+    });
+
+    expect(result.actualDuration).toBe(5.0);
+    expect(result.filterComplex).toContain("drawtext=text='Merhaba Dünya'");
+    expect(result.filterComplex).toContain('fontsize=60');
+    expect(result.filterComplex).toContain("enable='between(t,1.00,5.00)'");
+    expect(result.filterComplex).toContain('box=1');
+    expect(result.filterComplex).toContain('borderw=3');
+  });
+
   it('throws error when no media is present', () => {
     const emptyTracks: Track[] = [
       {

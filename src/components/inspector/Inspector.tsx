@@ -1,9 +1,10 @@
 import React from 'react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Sliders, Volume2, Move } from 'lucide-react';
+import { Sliders, Volume2, Move, Clock, RotateCcw } from 'lucide-react';
+import { TextInspector } from './TextInspector';
 
 export const Inspector: React.FC = () => {
-  const { tracks, selectedClipId, updateClipTransform, updateClipAudio } = useTimelineStore();
+  const { tracks, selectedClipId, updateClipTransform, updateClipAudio, updateClipTiming } = useTimelineStore();
 
   let selectedClip = null;
   for (const track of tracks) {
@@ -34,27 +35,56 @@ export const Inspector: React.FC = () => {
           <Sliders className="w-4 h-4 text-primary" />
           <span>Klip Özellikleri</span>
         </div>
-        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 bg-surface-light text-primary rounded">
+        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 bg-surface-light text-primary rounded font-bold">
           {selectedClip.type}
         </span>
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Clip General Info */}
-        <div className="bg-surface-light/40 p-2.5 rounded-lg border border-surface-border">
+        {/* Clip General Info & Timing */}
+        <div className="bg-surface-light/40 p-3 rounded-lg border border-surface-border space-y-2.5">
           <p className="text-xs font-semibold text-gray-200 truncate">{selectedClip.name}</p>
-          <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono text-gray-400">
-            <div>Başlangıç: <span className="text-gray-200">{selectedClip.startTime.toFixed(2)}s</span></div>
-            <div>Süre: <span className="text-gray-200">{selectedClip.duration.toFixed(2)}s</span></div>
+          
+          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-gray-400">
+            <div>
+              Zaman Çizelgesi: <span className="text-gray-200 font-semibold">{selectedClip.startTime.toFixed(2)}s</span>
+            </div>
+            <div>
+              Klip Süresi: <span className="text-gray-200 font-semibold">{selectedClip.duration.toFixed(2)}s</span>
+            </div>
           </div>
+
+          {/* InPoint (Media Start Offset) */}
+          {selectedClip.type !== 'text' && (
+            <div className="pt-2 border-t border-surface-border/60 flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-1.5 text-gray-400">
+                <Clock className="w-3.5 h-3.5 text-primary" />
+                <span>Video İçi Başlangıç:</span>
+                <span className="font-mono text-primary font-bold">{selectedClip.inPoint.toFixed(2)}s</span>
+              </div>
+              {selectedClip.inPoint > 0.05 && (
+                <button
+                  onClick={() => updateClipTiming(selectedClip!.id, selectedClip!.startTime, selectedClip!.duration, 0)}
+                  title="Videonun en başına sıfırla (0.00s)"
+                  className="flex items-center gap-1 text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 rounded transition-all"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Sıfırla</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Video / Visual Transforms */}
+        {/* Text Specific Inspector */}
+        {selectedClip.type === 'text' && <TextInspector clip={selectedClip} />}
+
+        {/* Visual Transforms (Video, Overlay & Text) */}
         {selectedClip.type !== 'audio' && (
-          <div className="space-y-4">
+          <div className="space-y-4 pt-2 border-t border-surface-border">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
               <Move className="w-3.5 h-3.5 text-primary" />
-              <span>Görsel & Dönüşüm (Transform)</span>
+              <span>Konum & Boyut (Transform)</span>
             </div>
 
             {/* Scale Slider */}
@@ -135,39 +165,41 @@ export const Inspector: React.FC = () => {
           </div>
         )}
 
-        {/* Audio Settings */}
-        <div className="space-y-4 pt-2 border-t border-surface-border">
-          <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
-            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Ses Ayarları (Audio)</span>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>Ses Seviyesi (Volume)</span>
-              <span className="font-mono text-gray-200">{Math.round((audio?.volume ?? 1) * 100)}%</span>
+        {/* Audio Settings (for video & audio clips) */}
+        {selectedClip.type !== 'text' && (
+          <div className="space-y-4 pt-2 border-t border-surface-border">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Ses Ayarları (Audio)</span>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.05"
-              value={audio?.volume ?? 1}
-              onChange={(e) => updateClipAudio(selectedClip.id, { volume: parseFloat(e.target.value) })}
-              className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-emerald-400"
-            />
-          </div>
 
-          <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={audio?.muted ?? false}
-              onChange={(e) => updateClipAudio(selectedClip.id, { muted: e.target.checked })}
-              className="rounded bg-surface-light border-surface-border text-primary focus:ring-0"
-            />
-            <span>Sesi Tamamen Kapat (Mute)</span>
-          </label>
-        </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Ses Seviyesi (Volume)</span>
+                <span className="font-mono text-gray-200">{Math.round((audio?.volume ?? 1) * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={audio?.volume ?? 1}
+                onChange={(e) => updateClipAudio(selectedClip.id, { volume: parseFloat(e.target.value) })}
+                className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-emerald-400"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={audio?.muted ?? false}
+                onChange={(e) => updateClipAudio(selectedClip.id, { muted: e.target.checked })}
+                className="rounded bg-surface-light border-surface-border text-primary focus:ring-0"
+              />
+              <span>Sesi Tamamen Kapat (Mute)</span>
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );

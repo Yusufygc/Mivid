@@ -1,4 +1,4 @@
-import { Clip, Track } from '@/types/timeline';
+import { Clip, Track, TrackType } from '@/types/timeline';
 import { Logger } from '@/core/logger';
 import { clampTime } from '@/utils/time';
 
@@ -9,13 +9,129 @@ export interface SplitResult {
 
 export class TimelineEngine {
   /**
+   * Checks if two time intervals overlap
+   */
+  public static doesClipOverlap(
+    clipA: { startTime: number; duration: number },
+    clipB: { startTime: number; duration: number }
+  ): boolean {
+    const startA = clipA.startTime;
+    const endA = clipA.startTime + clipA.duration;
+    const startB = clipB.startTime;
+    const endB = clipB.startTime + clipB.duration;
+    return startA < endB - 0.001 && endA > startB + 0.001;
+  }
+
+  /**
+   * Checks if a given track is free from any clip collision in the specified [startTime, startTime + duration] range
+   */
+  public static isTrackFreeAt(
+    track: Track,
+    startTime: number,
+    duration: number,
+    ignoreClipId?: string
+  ): boolean {
+    return track.clips.every(
+      (c) => c.id === ignoreClipId || !TimelineEngine.doesClipOverlap({ startTime, duration }, c)
+    );
+  }
+
+  /**
+   * Clamps a clip's candidate start time so it never overlaps adjacent clips on the same track
+   */
+  public static clampClipTimingWithoutCollision(
+    track: Track,
+    clipId: string,
+    candidateStart: number,
+    duration: number
+  ): number {
+    const otherClips = track.clips.filter((c) => c.id !== clipId).sort((a, b) => a.startTime - b.startTime);
+    let clampedStart = Math.max(0, candidateStart);
+
+    for (const other of otherClips) {
+      // If candidate start falls inside an existing clip
+      if (clampedStart < other.startTime + other.duration && clampedStart + duration > other.startTime) {
+        if (candidateStart + duration / 2 < other.startTime + other.duration / 2) {
+          clampedStart = Math.max(0, other.startTime - duration);
+        } else {
+          clampedStart = other.startTime + other.duration;
+        }
+      }
+    }
+
+    return clampTime(clampedStart);
+  }
+
+  /**
+   * Finds an existing free track of the given type, or automatically creates a new track lane
+   * so overlapping clips never stack on the same track
+   */
+  public static findOrCreateTrackForPlacement(
+    tracks: Track[],
+    type: TrackType,
+    startTime: number,
+    duration: number
+  ): { targetTrackId: string; updatedTracks: Track[] } {
+    // Treat 'video' and 'overlay' as compatible video layers
+    const matchingTracks = tracks.filter((t) =>
+      type === 'video' || type === 'overlay' ? t.type === 'video' || t.type === 'overlay' : t.type === type
+    );
+
+    // 1. Find existing free track of matching type
+    for (const track of matchingTracks) {
+      if (TimelineEngine.isTrackFreeAt(track, startTime, duration)) {
+        return { targetTrackId: track.id, updatedTracks: tracks };
+      }
+    }
+
+    // 2. If all matching tracks are occupied at this time interval, create a new track lane
+    const count = matchingTracks.length + 1;
+    const newTrackId = `track-${type}-${Date.now()}`;
+    const name =
+      type === 'text'
+        ? `Metin ${count} (T${count})`
+        : type === 'audio'
+        ? `Ses ${count} (A${count})`
+        : `Video ${count} (V${count})`;
+
+    const newTrack: Track = {
+      id: newTrackId,
+      name,
+      type,
+      isMuted: false,
+      isLocked: false,
+      isHidden: false,
+      clips: [],
+    };
+
+    let updatedTracks: Track[];
+    if (type === 'text') {
+      // Put text tracks at the top of the timeline
+      updatedTracks = [newTrack, ...tracks];
+    } else if (type === 'audio') {
+      // Put audio tracks at the bottom
+      updatedTracks = [...tracks, newTrack];
+    } else {
+      // Put overlay/video above other video tracks
+      const firstVideoIdx = tracks.findIndex((t) => t.type === 'video' || t.type === 'overlay');
+      if (firstVideoIdx >= 0) {
+        updatedTracks = [...tracks.slice(0, firstVideoIdx), newTrack, ...tracks.slice(firstVideoIdx)];
+      } else {
+        updatedTracks = [newTrack, ...tracks];
+      }
+    }
+
+    Logger.info('TimelineEngine', `Auto-created new track lane for parallel placement: ${name}`);
+    return { targetTrackId: newTrackId, updatedTracks };
+  }
+
+  /**
    * Splits a clip into two distinct clips at the given splitTime
    */
   public static splitClip(clip: Clip, splitTime: number): SplitResult | null {
     const clipStart = clip.startTime;
     const clipEnd = clip.startTime + clip.duration;
 
-    // Check if split point is strictly inside the clip bounds
     if (splitTime <= clipStart || splitTime >= clipEnd) {
       Logger.warn('TimelineEngine', 'Split time is outside clip bounds', { clipId: clip.id, splitTime, clipStart, clipEnd });
       return null;
@@ -24,7 +140,6 @@ export class TimelineEngine {
     const leftDuration = clampTime(splitTime - clipStart);
     const rightDuration = clampTime(clipEnd - splitTime);
 
-    // Left clip retains start time and inPoint
     const leftClip: Clip = {
       ...clip,
       id: crypto.randomUUID ? crypto.randomUUID() : `${clip.id}-L-${Date.now()}`,
@@ -32,7 +147,6 @@ export class TimelineEngine {
       outPoint: clampTime(clip.inPoint + leftDuration * clip.speed),
     };
 
-    // Right clip starts at splitTime, inPoint moves forward
     const rightClip: Clip = {
       ...clip,
       id: crypto.randomUUID ? crypto.randomUUID() : `${clip.id}-R-${Date.now()}`,
@@ -52,14 +166,14 @@ export class TimelineEngine {
   public static trimStart(clip: Clip, newStartTime: number): Clip | null {
     const clipEnd = clip.startTime + clip.duration;
     if (newStartTime >= clipEnd - 0.1) {
-      return null; // Minimum clip duration is 0.1s
+      return null;
     }
 
     const delta = newStartTime - clip.startTime;
     const newInPoint = clip.inPoint + delta * clip.speed;
 
     if (newInPoint < 0) {
-      return null; // Cannot trim beyond start of asset
+      return null;
     }
 
     const newDuration = clampTime(clipEnd - newStartTime);
@@ -77,14 +191,14 @@ export class TimelineEngine {
    */
   public static trimEnd(clip: Clip, newEndTime: number, maxAssetDuration?: number): Clip | null {
     if (newEndTime <= clip.startTime + 0.1) {
-      return null; // Minimum clip duration is 0.1s
+      return null;
     }
 
     const newDuration = clampTime(newEndTime - clip.startTime);
     const newOutPoint = clampTime(clip.inPoint + newDuration * clip.speed);
 
     if (maxAssetDuration !== undefined && newOutPoint > maxAssetDuration) {
-      return null; // Cannot trim beyond asset total duration
+      return null;
     }
 
     return {
@@ -107,7 +221,6 @@ export class TimelineEngine {
         }
       }
     }
-    // Sort by zIndex
     return active.sort((a, b) => (a.transform.zIndex || 0) - (b.transform.zIndex || 0));
   }
 

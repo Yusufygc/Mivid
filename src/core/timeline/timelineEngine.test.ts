@@ -27,13 +27,11 @@ describe('TimelineEngine', () => {
 
     const { leftClip, rightClip } = result;
 
-    // Left clip should be from 2.0s to 5.0s (duration 3.0s, inPoint 0, outPoint 3.0)
     expect(leftClip.startTime).toBe(2.0);
     expect(leftClip.duration).toBe(3.0);
     expect(leftClip.inPoint).toBe(0);
     expect(leftClip.outPoint).toBe(3.0);
 
-    // Right clip should be from 5.0s to 8.0s (duration 3.0s, inPoint 3.0, outPoint 6.0)
     expect(rightClip.startTime).toBe(5.0);
     expect(rightClip.duration).toBe(3.0);
     expect(rightClip.inPoint).toBe(3.0);
@@ -49,7 +47,7 @@ describe('TimelineEngine', () => {
   });
 
   it('trims start of clip correctly', () => {
-    const clip = createMockClip('c1', 2.0, 6.0, 0); // 2.0s to 8.0s
+    const clip = createMockClip('c1', 2.0, 6.0, 0);
     const trimmed = TimelineEngine.trimStart(clip, 4.0);
 
     expect(trimmed).not.toBeNull();
@@ -61,7 +59,7 @@ describe('TimelineEngine', () => {
   });
 
   it('trims end of clip correctly', () => {
-    const clip = createMockClip('c1', 2.0, 6.0, 0); // 2.0s to 8.0s
+    const clip = createMockClip('c1', 2.0, 6.0, 0);
     const trimmed = TimelineEngine.trimEnd(clip, 5.0, 10.0);
 
     expect(trimmed).not.toBeNull();
@@ -93,11 +91,63 @@ describe('TimelineEngine', () => {
       clips: [createMockClip('c3', 2, 4)],
     };
 
-    // At 3 seconds, both c1 (track1) and c3 (track2) are active
     const active = TimelineEngine.getActiveClipsAtTime([track1, track2], 3.0);
     expect(active.length).toBe(2);
     expect(active.map((c) => c.id)).toContain('c1');
     expect(active.map((c) => c.id)).toContain('c3');
+  });
+
+  it('detects overlapping clip intervals correctly', () => {
+    expect(TimelineEngine.doesClipOverlap({ startTime: 0, duration: 5 }, { startTime: 3, duration: 4 })).toBe(true);
+    expect(TimelineEngine.doesClipOverlap({ startTime: 0, duration: 5 }, { startTime: 5, duration: 3 })).toBe(false);
+    expect(TimelineEngine.doesClipOverlap({ startTime: 6, duration: 2 }, { startTime: 0, duration: 5 })).toBe(false);
+  });
+
+  it('auto-creates a new track when the current track is occupied at candidate time', () => {
+    const existingTrack: Track = {
+      id: 'track-t1',
+      name: 'Metin 1 (T1)',
+      type: 'text',
+      isMuted: false,
+      isLocked: false,
+      isHidden: false,
+      clips: [createMockClip('text-1', 2.0, 5.0)], // 2.0 to 7.0s is occupied
+    };
+
+    // Attempting to place another text at 4.0s (occupied) -> should spawn T2
+    const { targetTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(
+      [existingTrack],
+      'text',
+      4.0,
+      3.0
+    );
+
+    expect(targetTrackId).not.toBe('track-t1');
+    expect(updatedTracks.length).toBe(2);
+    expect(updatedTracks.some((t) => t.type === 'text' && t.id === targetTrackId)).toBe(true);
+  });
+
+  it('reuses existing track if free at candidate time', () => {
+    const existingTrack: Track = {
+      id: 'track-t1',
+      name: 'Metin 1 (T1)',
+      type: 'text',
+      isMuted: false,
+      isLocked: false,
+      isHidden: false,
+      clips: [createMockClip('text-1', 0, 4.0)], // 0 to 4.0s
+    };
+
+    // Placing text at 6.0s (free) -> should reuse track-t1
+    const { targetTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(
+      [existingTrack],
+      'text',
+      6.0,
+      3.0
+    );
+
+    expect(targetTrackId).toBe('track-t1');
+    expect(updatedTracks.length).toBe(1);
   });
 
   it('calculates magnetic snap accurately', () => {

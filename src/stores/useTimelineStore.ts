@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Track, Clip, Transform, AudioSettings } from '@/types/timeline';
+import { Track, Clip, Transform, AudioSettings, TextProperties } from '@/types/timeline';
 import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import { Logger } from '@/core/logger';
@@ -23,19 +23,21 @@ interface TimelineStoreState {
   toggleSnapping: () => void;
 
   // Track & Clip Actions
-  addTrack: (type: 'video' | 'audio' | 'overlay') => void;
+  addTrack: (type: 'video' | 'audio' | 'overlay' | 'text') => void;
   deleteTrack: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackHide: (trackId: string) => void;
   toggleTrackLock: (trackId: string) => void;
 
-  addClipFromAsset: (asset: MediaAsset, trackId?: string, startTime?: number) => Clip | null;
+  addClipFromAsset: (asset: MediaAsset, targetTrackId?: string, startTime?: number) => Clip | null;
+  addTextClip: (preset?: Partial<TextProperties>, targetTrackId?: string, startTime?: number) => Clip | null;
   removeClip: (clipId: string) => void;
   splitSelectedClip: () => boolean;
   splitClipById: (clipId: string, splitTime: number) => boolean;
   updateClipTiming: (clipId: string, startTime: number, duration: number, inPoint?: number, outPoint?: number) => void;
   updateClipTransform: (clipId: string, transform: Partial<Transform>) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
+  updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
 }
 
@@ -54,6 +56,15 @@ const syncProjectDuration = (tracks: Track[]) => {
 };
 
 const initialTracks: Track[] = [
+  {
+    id: 'track-t1',
+    name: 'Metin / Başlık (T1)',
+    type: 'text',
+    isMuted: false,
+    isLocked: false,
+    isHidden: false,
+    clips: [],
+  },
   {
     id: 'track-v2',
     name: 'Video 2 (Overlay / PiP)',
@@ -117,7 +128,13 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   addTrack: (type) => {
     const id = `track-${type}-${Date.now()}`;
-    const name = type === 'audio' ? `Ses (${id.slice(-4)})` : `Video (${id.slice(-4)})`;
+    const count = get().tracks.filter((t) => t.type === type).length + 1;
+    const name =
+      type === 'audio'
+        ? `Ses ${count} (A${count})`
+        : type === 'text'
+        ? `Metin ${count} (T${count})`
+        : `Video ${count} (V${count})`;
     set((state) => {
       const newTracks = [...state.tracks, { id, name, type, isMuted: false, isLocked: false, isHidden: false, clips: [] }];
       syncProjectDuration(newTracks);
@@ -151,35 +168,26 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
     }));
   },
 
-  addClipFromAsset: (asset, targetTrackId, requestedStartTime) => {
+  addClipFromAsset: (asset, _targetTrackId, requestedStartTime) => {
     const { tracks, currentTime } = get();
-
-    let track = tracks.find((t) => t.id === targetTrackId);
-    if (!track) {
-      if (asset.type === 'audio') {
-        track = tracks.find((t) => t.type === 'audio');
-      } else {
-        track = tracks.find((t) => t.type === 'video');
-      }
-    }
-
-    if (!track) {
-      Logger.error('useTimelineStore', 'No suitable track found for asset', asset);
-      return null;
-    }
-
-    let startTime = requestedStartTime !== undefined ? requestedStartTime : currentTime;
-    if (requestedStartTime === undefined && track.clips.length > 0) {
-      const lastClip = track.clips[track.clips.length - 1];
-      startTime = Math.max(currentTime, lastClip.startTime + lastClip.duration);
-    }
-
     const duration = asset.duration || 5.0;
+    const startTime = requestedStartTime !== undefined ? requestedStartTime : currentTime;
+
+    const trackType = asset.type === 'audio' ? 'audio' : 'video';
+
+    // Find a free track or auto-create a new lane so clips never overlap
+    const { targetTrackId: resolvedTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(
+      tracks,
+      trackType,
+      startTime,
+      duration
+    );
+
     const clipId = crypto.randomUUID ? crypto.randomUUID() : `clip-${Date.now()}`;
 
     const newClip: Clip = {
       id: clipId,
-      trackId: track.id,
+      trackId: resolvedTrackId,
       assetId: asset.id,
       name: asset.name,
       type: asset.type,
@@ -195,7 +203,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
         scaleY: 1,
         rotation: 0,
         opacity: 1,
-        zIndex: track.type === 'overlay' ? 2 : 1,
+        zIndex: 1,
       },
       audio: {
         volume: 1.0,
@@ -205,18 +213,104 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       },
     };
 
-    const newTracks = tracks.map((t) =>
-      t.id === track?.id ? { ...t, clips: [...t.clips, newClip].sort((a, b) => a.startTime - b.startTime) } : t
+    const finalTracks = updatedTracks.map((t) =>
+      t.id === resolvedTrackId ? { ...t, clips: [...t.clips, newClip].sort((a, b) => a.startTime - b.startTime) } : t
     );
 
-    syncProjectDuration(newTracks);
+    syncProjectDuration(finalTracks);
 
     set({
-      tracks: newTracks,
+      tracks: finalTracks,
       selectedClipId: newClip.id,
     });
 
-    Logger.info('useTimelineStore', `Clip added to track ${track.name}`, newClip);
+    Logger.info('useTimelineStore', `Clip placed on track ${resolvedTrackId} without collision`, newClip);
+    return newClip;
+  },
+
+  addTextClip: (preset, _targetTrackId, requestedStartTime) => {
+    const { tracks, currentTime } = get();
+    const duration = 3.0; // 3 seconds default for text
+    const startTime = requestedStartTime !== undefined ? requestedStartTime : currentTime;
+
+    // Find a free text track or auto-create T2, T3... so texts never overlap
+    const { targetTrackId: resolvedTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(
+      tracks,
+      'text',
+      startTime,
+      duration
+    );
+
+    const clipId = crypto.randomUUID ? crypto.randomUUID() : `text-clip-${Date.now()}`;
+
+    const defaultText: TextProperties = {
+      content: 'Metin Girin',
+      fontFamily: 'Inter',
+      fontSize: 54,
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+      fontStyle: 'normal',
+      textAlign: 'center',
+      stroke: {
+        color: '#000000',
+        width: 3,
+      },
+      shadow: {
+        color: 'rgba(0,0,0,0.7)',
+        blur: 8,
+        offsetX: 2,
+        offsetY: 4,
+      },
+      backgroundBox: {
+        enabled: false,
+        color: 'rgba(0,0,0,0.6)',
+        padding: 12,
+        borderRadius: 8,
+      },
+      ...preset,
+    };
+
+    const newClip: Clip = {
+      id: clipId,
+      trackId: resolvedTrackId,
+      assetId: `text-asset-${clipId}`,
+      name: defaultText.content,
+      type: 'text',
+      startTime: clampTime(startTime),
+      duration: clampTime(duration),
+      inPoint: 0,
+      outPoint: clampTime(duration),
+      speed: 1.0,
+      transform: {
+        x: 0,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 5,
+      },
+      audio: {
+        volume: 1.0,
+        muted: true,
+        fadeIn: 0,
+        fadeOut: 0,
+      },
+      text: defaultText,
+    };
+
+    const finalTracks = updatedTracks.map((t) =>
+      t.id === resolvedTrackId ? { ...t, clips: [...t.clips, newClip].sort((a, b) => a.startTime - b.startTime) } : t
+    );
+
+    syncProjectDuration(finalTracks);
+
+    set({
+      tracks: finalTracks,
+      selectedClipId: newClip.id,
+    });
+
+    Logger.info('useTimelineStore', `Text clip placed on track ${resolvedTrackId} without collision`, newClip);
     return newClip;
   },
 
@@ -273,23 +367,31 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   updateClipTiming: (clipId, startTime, duration, inPoint, outPoint) => {
     const { tracks } = get();
-    const newTracks = tracks.map((t) => ({
-      ...t,
-      clips: t.clips
-        .map((c) => {
-          if (c.id === clipId) {
-            return {
-              ...c,
-              startTime: clampTime(startTime),
-              duration: clampTime(duration),
-              inPoint: inPoint !== undefined ? clampTime(inPoint) : c.inPoint,
-              outPoint: outPoint !== undefined ? clampTime(outPoint) : c.outPoint,
-            };
-          }
-          return c;
-        })
-        .sort((a, b) => a.startTime - b.startTime),
-    }));
+    const newTracks = tracks.map((t) => {
+      const clip = t.clips.find((c) => c.id === clipId);
+      if (!clip) return t;
+
+      // Prevent collision with other clips on the same track
+      const validStart = TimelineEngine.clampClipTimingWithoutCollision(t, clipId, startTime, duration);
+
+      return {
+        ...t,
+        clips: t.clips
+          .map((c) => {
+            if (c.id === clipId) {
+              return {
+                ...c,
+                startTime: validStart,
+                duration: clampTime(duration),
+                inPoint: inPoint !== undefined ? clampTime(inPoint) : c.inPoint,
+                outPoint: outPoint !== undefined ? clampTime(outPoint) : c.outPoint,
+              };
+            }
+            return c;
+          })
+          .sort((a, b) => a.startTime - b.startTime),
+      };
+    });
 
     syncProjectDuration(newTracks);
 
@@ -312,6 +414,23 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       tracks: state.tracks.map((t) => ({
         ...t,
         clips: t.clips.map((c) => (c.id === clipId ? { ...c, audio: { ...c.audio, ...audioUpdates } } : c)),
+      })),
+    }));
+  },
+
+  updateClipText: (clipId, textUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId && c.text
+            ? {
+                ...c,
+                name: textUpdates.content ?? c.name,
+                text: { ...c.text, ...textUpdates },
+              }
+            : c
+        ),
       })),
     }));
   },

@@ -1,9 +1,9 @@
 import { AssetType } from './asset';
 
-export type TrackType = 'video' | 'audio' | 'overlay';
+export type TrackType = 'video' | 'audio' | 'overlay' | 'text';
 
 export interface Transform {
-  x: number; // Offset percentage (-100 to 100) or pixels
+  x: number; // Offset in pixels from canvas center
   y: number;
   scaleX: number; // 1 = 100%
   scaleY: number;
@@ -19,6 +19,38 @@ export interface AudioSettings {
   fadeOut: number; // seconds
 }
 
+export interface TextStroke {
+  color: string;
+  width: number;
+}
+
+export interface TextShadow {
+  color: string;
+  blur: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface TextBackgroundBox {
+  enabled: boolean;
+  color: string;
+  padding: number;
+  borderRadius: number;
+}
+
+export interface TextProperties {
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  fontWeight: 'normal' | 'bold' | '900';
+  fontStyle?: 'normal' | 'italic';
+  textAlign: 'left' | 'center' | 'right';
+  stroke?: TextStroke;
+  shadow?: TextShadow;
+  backgroundBox?: TextBackgroundBox;
+}
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -32,6 +64,7 @@ export interface Clip {
   speed: number; // 0.25x to 4x playback rate
   transform: Transform;
   audio: AudioSettings;
+  text?: TextProperties;
 }
 
 export interface Track {

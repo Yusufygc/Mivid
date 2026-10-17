@@ -70,6 +70,18 @@ export interface ColorGrading {
   lut?: string;
 }
 
+export type AnimatableProp = 'x' | 'y' | 'scale' | 'opacity';
+export type Easing = 'linear' | 'ease-in-out';
+
+export interface Keyframe {
+  id: string;
+  time: number; // Clip-local seconds on the timeline (0..duration), independent of source speed
+  value: number;
+  easing: Easing; // Easing applied on the segment that starts at this keyframe
+}
+
+export type ClipKeyframes = Partial<Record<AnimatableProp, Keyframe[]>>;
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -87,6 +99,7 @@ export interface Clip {
   transitionIn?: Transition;
   transitionOut?: Transition;
   colorGrading?: ColorGrading;
+  keyframes?: ClipKeyframes; // Each list sorted by time
 }
 
 export interface Track {

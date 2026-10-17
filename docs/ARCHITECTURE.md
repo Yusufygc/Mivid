@@ -80,3 +80,5 @@ src/
   - `outPoint`: Orijinal medyanın bitiş noktası.
   - `transform`: Konum (x, y), Ölçek (scaleX, scaleY), Döndürme (rotation), Opaklık (opacity), Katman Sırası (zIndex).
   - `audio`: Ses seviyesi (volume: 0..1), Sessiz (muted).
+  - `speed`: Oynatma hızı (0.25x–4x). Kaynak aralığı `outPoint - inPoint`, timeline süresi `duration = kaynak / speed`.
+  - `keyframes`: `x`, `y`, `scale`, `opacity` için zamana göre sıralı `Keyframe { id, time, value, easing }` listeleri. `time` klip-yerel saniyedir (klibin başından), kaynak hızından bağımsızdır. Değerlendirme `src/core/animation/keyframes.ts`: preview `resolveTransform()`, export `buildKeyframeExpr()` (aynı easing formülü: `p*p*(3-2*p)`).

@@ -1,6 +1,7 @@
 import { Clip, Track, TrackType } from '@/types/timeline';
 import { Logger } from '@/core/logger';
 import { clampTime } from '@/utils/time';
+import { splitKeyframes } from '@/core/animation/keyframes';
 
 export interface SplitResult {
   leftClip: Clip;
@@ -158,11 +159,14 @@ export class TimelineEngine {
     const leftDuration = clampTime(splitTime - clipStart);
     const rightDuration = clampTime(clipEnd - splitTime);
 
+    const { left: leftKeyframes, right: rightKeyframes } = splitKeyframes(clip.keyframes, splitTime - clipStart);
+
     const leftClip: Clip = {
       ...clip,
       id: crypto.randomUUID ? crypto.randomUUID() : `${clip.id}-L-${Date.now()}`,
       duration: leftDuration,
       outPoint: clampTime(clip.inPoint + leftDuration * clip.speed),
+      keyframes: leftKeyframes,
     };
 
     const rightClip: Clip = {
@@ -172,6 +176,7 @@ export class TimelineEngine {
       duration: rightDuration,
       inPoint: leftClip.outPoint,
       outPoint: clip.outPoint,
+      keyframes: rightKeyframes,
     };
 
     Logger.info('TimelineEngine', `Split clip ${clip.name} into two at ${splitTime.toFixed(2)}s`);

@@ -3,6 +3,7 @@ import { useTimelineStore } from '@/stores/useTimelineStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { previewEngine } from '@/core/preview/previewEngine';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
+import { getKeyframeTimes } from '@/core/animation/keyframes';
 import {
   Scissors,
   Trash2,
@@ -196,7 +197,8 @@ export const Timeline: React.FC = () => {
           const shift = Math.min(maxLeftShift, candidateStart - trimmingClip.originalStart);
           const newStart = Math.max(0, trimmingClip.originalStart + shift);
           const newDuration = trimmingClip.originalDuration - shift;
-          const newInPoint = trimmingClip.originalInPoint + shift;
+          const trimSpeed = tracks.flatMap((t) => t.clips).find((c) => c.id === trimmingClip.id)?.speed ?? 1;
+          const newInPoint = trimmingClip.originalInPoint + shift * trimSpeed;
 
           updateClipTiming(trimmingClip.id, newStart, newDuration, newInPoint, trimmingClip.originalOutPoint);
         } else {
@@ -213,7 +215,8 @@ export const Timeline: React.FC = () => {
           }
 
           const newDuration = Math.max(0.2, candidateEnd - trimmingClip.originalStart);
-          const newOutPoint = trimmingClip.originalInPoint + newDuration;
+          const trimSpeed = tracks.flatMap((t) => t.clips).find((c) => c.id === trimmingClip.id)?.speed ?? 1;
+          const newOutPoint = trimmingClip.originalInPoint + newDuration * trimSpeed;
           updateClipTiming(trimmingClip.id, trimmingClip.originalStart, newDuration, trimmingClip.originalInPoint, newOutPoint);
         }
       }
@@ -511,7 +514,28 @@ export const Timeline: React.FC = () => {
                         <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1 z-10 relative">
                           {clip.type === 'text' && <Type className="w-3 h-3 text-amber-300 flex-shrink-0" />}
                           {clip.name}
+                          {Math.abs(clip.speed - 1) > 0.001 && (
+                            <span className="text-[9px] font-mono bg-black/40 text-amber-300 px-1 rounded flex-shrink-0">
+                              {clip.speed}x
+                            </span>
+                          )}
                         </span>
+
+                        {/* Keyframe markers (selected clip only) */}
+                        {clip.id === selectedClipId &&
+                          getKeyframeTimes(clip.keyframes).map((kfTime) => (
+                            <button
+                              key={kfTime}
+                              title={`Keyframe ${kfTime.toFixed(2)}s`}
+                              style={{ left: `${kfTime * zoom}px` }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                previewEngine.seekTo(clip.startTime + kfTime);
+                              }}
+                              className="absolute bottom-0.5 w-2.5 h-2.5 -ml-[5px] rotate-45 bg-amber-400 border border-black/60 hover:bg-white z-20"
+                            />
+                          ))}
 
                         {/* Transition Out Visual */}
                         {clip.transitionOut && (

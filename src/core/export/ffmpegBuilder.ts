@@ -1,4 +1,4 @@
-import { Track } from '@/types/timeline';
+import { Keyframe, Track } from '@/types/timeline';
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { Logger } from '@/core/logger';
@@ -37,6 +37,52 @@ const hexToFFmpegColor = (hexOrRgba: string): string => {
     }
   }
   return hexOrRgba;
+};
+
+const formatNumber = (n: number): string => String(Math.round(n * 10000) / 10000);
+
+/**
+ * Builds an FFmpeg expression for a keyframe curve over timeline seconds.
+ * `timeVar` is `t` for most filters and `T` for geq. Must match evaluateKeyframes() in core/animation.
+ * Easing 'ease-in-out' uses smoothstep p*p*(3-2*p), like applyEasing().
+ */
+export const buildKeyframeExpr = (keyframes: Keyframe[], clipStart: number, timeVar: 't' | 'T' = 't'): string => {
+  const points = keyframes.map((k) => ({
+    time: clipStart + k.time,
+    value: k.value,
+    easing: k.easing,
+  }));
+  if (points.length === 1) return formatNumber(points[0].value);
+
+  const last = points[points.length - 1];
+  let expr = formatNumber(last.value);
+
+  for (let i = points.length - 2; i >= 0; i--) {
+    const a = points[i];
+    const b = points[i + 1];
+    const span = b.time - a.time;
+    const progress = `(${timeVar}-${formatNumber(a.time)})/${formatNumber(span)}`;
+    const eased = a.easing === 'ease-in-out' ? `(${progress})*(${progress})*(3-2*(${progress}))` : progress;
+    const segment =
+      span > 0 ? `${formatNumber(a.value)}+(${formatNumber(b.value - a.value)})*(${eased})` : formatNumber(b.value);
+    expr = `if(lt(${timeVar},${formatNumber(b.time)}),${segment},${expr})`;
+  }
+
+  // Hold the first value before the first keyframe
+  return `if(lt(${timeVar},${formatNumber(points[0].time)}),${formatNumber(points[0].value)},${expr})`;
+};
+
+/** atempo only accepts 0.5..100 per instance, so slow speeds are chained (0.25x = 0.5 * 0.5) */
+export const buildAtempoChain = (speed: number): string => {
+  if (!speed || Math.abs(speed - 1) < 0.001) return '';
+  const factors: number[] = [];
+  let remaining = speed;
+  while (remaining < 0.5 - 1e-9) {
+    factors.push(0.5);
+    remaining /= 0.5;
+  }
+  factors.push(remaining);
+  return factors.map((f) => `atempo=${formatNumber(f)}`).join(',') + ',';
 };
 
 export class FFmpegCommandBuilder {
@@ -119,7 +165,11 @@ export class FFmpegCommandBuilder {
         const nextBase = `comp_${clipIndex}`;
 
         // Trim & timing for clip: shift PTS by startTime so overlay filter matches timestamps correctly!
-        let clipFilters = `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${clip.duration.toFixed(2)},setpts=PTS-STARTPTS+${clip.startTime.toFixed(2)}/TB`;
+        // The source span is duration * speed; setpts divides by speed so the clip fills `duration` on the timeline.
+        const speed = clip.speed || 1;
+        const sourceSpan = clip.duration * speed;
+        const ptsExpr = Math.abs(speed - 1) > 0.001 ? `(PTS-STARTPTS)/${formatNumber(speed)}` : 'PTS-STARTPTS';
+        let clipFilters = `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${sourceSpan.toFixed(2)},setpts=${ptsExpr}+${clip.startTime.toFixed(2)}/TB`;
 
         // Add alpha channel support for opacity and transitions
         clipFilters += `,format=yuva420p`;
@@ -130,8 +180,13 @@ export class FFmpegCommandBuilder {
         const endTime = endTimeNum.toFixed(2);
 
         // Opacity
+        const opacityKeyframes = clip.keyframes?.opacity;
         const opacity = clip.transform?.opacity ?? 1;
-        if (opacity < 1) {
+        if (opacityKeyframes && opacityKeyframes.length > 0) {
+          // Animated opacity: geq evaluates the keyframe curve per frame (T = timeline seconds)
+          const opacityExpr = buildKeyframeExpr(opacityKeyframes, clip.startTime, 'T');
+          clipFilters += `,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*clip(${opacityExpr},0,1)'`;
+        } else if (opacity < 1) {
           clipFilters += `,colorchannelmixer=aa=${opacity.toFixed(2)}`;
         }
 
@@ -146,29 +201,66 @@ export class FFmpegCommandBuilder {
 
         filterGraph.push(`${clipFilters}[${clipTag}]`);
 
-        // Scale & Transform
-        const scaleW = Math.round(project.width * (clip.transform?.scaleX ?? 1));
-        const scaleH = Math.round(project.height * (clip.transform?.scaleY ?? 1));
-        filterGraph.push(`[${clipTag}]scale=${scaleW}:${scaleH}[${scaledTag}]`);
+        // Scale: static, or an animated size evaluated per frame (t = timeline seconds)
+        const scaleKeyframes = clip.keyframes?.scale;
+        const scaleAnimated = !!scaleKeyframes && scaleKeyframes.length > 0;
+        const staticScaleX = clip.transform?.scaleX ?? 1;
+        const staticScaleY = clip.transform?.scaleY ?? 1;
 
+        if (scaleAnimated) {
+          const scaleExpr = buildKeyframeExpr(scaleKeyframes!, clip.startTime, 't');
+          const evenSize = (base: number) => `max(2,trunc(${base}*(${scaleExpr})/2)*2)`;
+          filterGraph.push(
+            `[${clipTag}]scale=w='${evenSize(project.width)}':h='${evenSize(project.height)}':eval=frame[${scaledTag}]`
+          );
+        } else {
+          const scaleW = Math.round(project.width * staticScaleX);
+          const scaleH = Math.round(project.height * staticScaleY);
+          filterGraph.push(`[${clipTag}]scale=${scaleW}:${scaleH}[${scaledTag}]`);
+        }
+
+        // Position: offset from the canvas center, same as the preview. Scaled frames are centered first.
         const posX = Math.round(clip.transform?.x ?? 0);
         const posY = Math.round(clip.transform?.y ?? 0);
+        const needsCentering = scaleAnimated || Math.abs(staticScaleX - 1) > 1e-6 || Math.abs(staticScaleY - 1) > 1e-6;
 
-        let xExpr: string | number = posX;
-        
+        let usesExpression = false;
+        const axisExpr = (keyframes: Keyframe[] | undefined, staticValue: number, centerExpr: string): string => {
+          let expr: string;
+          if (keyframes && keyframes.length > 0) {
+            usesExpression = true;
+            const animated = buildKeyframeExpr(keyframes, clip.startTime, 't');
+            expr = needsCentering ? `${centerExpr}+(${animated})` : animated;
+          } else if (needsCentering) {
+            usesExpression = true;
+            expr = `${centerExpr}+(${staticValue})`;
+          } else {
+            expr = String(staticValue);
+          }
+          return expr;
+        };
+
+        let xExpr = axisExpr(clip.keyframes?.x, posX, '(W-w)/2');
+        const yExpr = axisExpr(clip.keyframes?.y, posY, '(H-h)/2');
+
         if (clip.transitionIn && (clip.transitionIn.type === 'slide' || clip.transitionIn.type === 'wipe')) {
           const d = clip.transitionIn.duration.toFixed(2);
-          xExpr = `'if(lt(t,${startTime}+${d}), ${posX}+W*(1-(t-${startTime})/${d}), ${posX})'`;
+          xExpr += `+if(lt(t,${startTime}+${d}),W*(1-(t-${startTime})/${d}),0)`;
+          usesExpression = true;
         }
-        
+
         if (clip.transitionOut && (clip.transitionOut.type === 'slide' || clip.transitionOut.type === 'wipe')) {
           const d = clip.transitionOut.duration.toFixed(2);
           const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
-          xExpr = `'if(gt(t,${outStart}), ${posX}-W*(t-${outStart})/${d}, ${posX})'`;
+          xExpr += `+if(gt(t,${outStart}),-W*(t-${outStart})/${d},0)`;
+          usesExpression = true;
         }
 
+        const quote = (expr: string, isExpr: boolean): string => (isExpr ? `'${expr}'` : expr);
+        const yUsesExpression = needsCentering || (clip.keyframes?.y?.length ?? 0) > 0;
+
         filterGraph.push(
-          `[${currentVideoBase}][${scaledTag}]overlay=x=${xExpr}:y=${posY}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
+          `[${currentVideoBase}][${scaledTag}]overlay=x=${quote(xExpr, usesExpression)}:y=${quote(yExpr, yUsesExpression)}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
         );
 
         currentVideoBase = nextBase;
@@ -256,8 +348,10 @@ export class FFmpegCommandBuilder {
         const vol = (clip.audio?.volume ?? 1) * (clip.audio?.muted ? 0 : 1);
 
         const delayMs = Math.round(clip.startTime * 1000);
+        const audioSpeed = clip.speed || 1;
+        const audioSourceSpan = clip.duration * audioSpeed;
         filterGraph.push(
-          `[${inputIdx}:a]atrim=start=${clip.inPoint.toFixed(2)}:duration=${clip.duration.toFixed(2)},asetpts=PTS-STARTPTS,volume=${vol.toFixed(2)}[${audioTag}]`
+          `[${inputIdx}:a]atrim=start=${clip.inPoint.toFixed(2)}:duration=${audioSourceSpan.toFixed(2)},asetpts=PTS-STARTPTS,${buildAtempoChain(audioSpeed)}volume=${vol.toFixed(2)}[${audioTag}]`
         );
         filterGraph.push(`[${audioTag}]adelay=${delayMs}|${delayMs}[${delayedTag}]`);
 

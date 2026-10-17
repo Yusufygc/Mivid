@@ -1,10 +1,23 @@
 import React from 'react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Sliders, Volume2, Move, Clock, RotateCcw } from 'lucide-react';
+import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge } from 'lucide-react';
 import { TextInspector } from './TextInspector';
+import { KeyframeControls } from './KeyframeControls';
+import { evaluateProp } from '@/core/animation/keyframes';
+import { MAX_CLIP_SPEED, MIN_CLIP_SPEED } from '@/stores/useTimelineStore';
+
+const SPEED_PRESETS = [0.25, 0.5, 1, 1.5, 2, 4];
 
 export const Inspector: React.FC = () => {
-  const { tracks, selectedClipId, updateClipTransform, updateClipAudio, updateClipTiming } = useTimelineStore();
+  const {
+    tracks,
+    selectedClipId,
+    currentTime,
+    updateClipTransform,
+    updateClipAudio,
+    updateClipTiming,
+    setClipSpeed,
+  } = useTimelineStore();
 
   let selectedClip = null;
   for (const track of tracks) {
@@ -26,6 +39,15 @@ export const Inspector: React.FC = () => {
   }
 
   const { transform, audio } = selectedClip;
+
+  // Animated properties show the value at the playhead; edits on them become keyframes (auto-key)
+  const localTime = currentTime - selectedClip.startTime;
+  const evalTime = Math.min(selectedClip.duration, Math.max(0, localTime));
+  const scaleValue = evaluateProp(selectedClip, 'scale', evalTime);
+  const xValue = evaluateProp(selectedClip, 'x', evalTime);
+  const yValue = evaluateProp(selectedClip, 'y', evalTime);
+  const opacityValue = evaluateProp(selectedClip, 'opacity', evalTime);
+  const isMedia = selectedClip.type === 'video' || selectedClip.type === 'audio';
 
   return (
     <div className="w-72 bg-surface border-l border-surface-border flex flex-col h-full overflow-y-auto select-none">
@@ -76,6 +98,52 @@ export const Inspector: React.FC = () => {
           )}
         </div>
 
+        {/* Speed (video & audio clips) */}
+        {isMedia && (
+          <div className="space-y-3 pt-2 border-t border-surface-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+                <Gauge className="w-3.5 h-3.5 text-primary" />
+                <span>Hız (Speed)</span>
+              </div>
+              <span className="font-mono text-xs text-gray-200">{selectedClip.speed}x</span>
+            </div>
+
+            <input
+              type="range"
+              min={MIN_CLIP_SPEED}
+              max={MAX_CLIP_SPEED}
+              step="0.05"
+              value={selectedClip.speed}
+              onChange={(e) => setClipSpeed(selectedClip.id, parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+
+            <div className="grid grid-cols-6 gap-1">
+              {SPEED_PRESETS.map((preset) => {
+                const isActive = Math.abs(selectedClip.speed - preset) < 0.001;
+                return (
+                  <button
+                    key={preset}
+                    onClick={() => setClipSpeed(selectedClip.id, preset)}
+                    className={`py-1 rounded text-[10px] font-mono font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary text-white font-semibold'
+                        : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                    }`}
+                  >
+                    {preset}x
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-500">
+              Kaynak: {(selectedClip.outPoint - selectedClip.inPoint).toFixed(2)}s → Timeline:{' '}
+              {selectedClip.duration.toFixed(2)}s. Hız değişince sonraki klipler kayar.
+            </p>
+          </div>
+        )}
+
         {/* Text Specific Inspector */}
         {selectedClip.type === 'text' && <TextInspector clip={selectedClip} />}
 
@@ -89,16 +157,19 @@ export const Inspector: React.FC = () => {
 
             {/* Scale Slider */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-gray-400">
+              <div className="flex justify-between items-center text-xs text-gray-400">
                 <span>Ölçek (Scale)</span>
-                <span className="font-mono text-gray-200">{Math.round((transform?.scaleX ?? 1) * 100)}%</span>
+                <div className="flex items-center gap-2">
+                  <KeyframeControls clip={selectedClip} prop="scale" localTime={localTime} />
+                  <span className="font-mono text-gray-200">{Math.round(scaleValue * 100)}%</span>
+                </div>
               </div>
               <input
                 type="range"
                 min="0.1"
                 max="3"
                 step="0.05"
-                value={transform?.scaleX ?? 1}
+                value={scaleValue}
                 onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   updateClipTransform(selectedClip.id, { scaleX: val, scaleY: val });
@@ -110,19 +181,25 @@ export const Inspector: React.FC = () => {
             {/* Position X & Y */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-400">Konum X (px)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-gray-400">Konum X (px)</label>
+                  <KeyframeControls clip={selectedClip} prop="x" localTime={localTime} />
+                </div>
                 <input
                   type="number"
-                  value={Math.round(transform?.x ?? 0)}
+                  value={Math.round(xValue)}
                   onChange={(e) => updateClipTransform(selectedClip.id, { x: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-surface-light px-2 py-1 rounded text-xs text-gray-200 border border-surface-border focus:border-primary outline-none font-mono"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] text-gray-400">Konum Y (px)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-gray-400">Konum Y (px)</label>
+                  <KeyframeControls clip={selectedClip} prop="y" localTime={localTime} />
+                </div>
                 <input
                   type="number"
-                  value={Math.round(transform?.y ?? 0)}
+                  value={Math.round(yValue)}
                   onChange={(e) => updateClipTransform(selectedClip.id, { y: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-surface-light px-2 py-1 rounded text-xs text-gray-200 border border-surface-border focus:border-primary outline-none font-mono"
                 />
@@ -131,16 +208,19 @@ export const Inspector: React.FC = () => {
 
             {/* Opacity */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-gray-400">
+              <div className="flex justify-between items-center text-xs text-gray-400">
                 <span>Opaklık (Opacity)</span>
-                <span className="font-mono text-gray-200">{Math.round((transform?.opacity ?? 1) * 100)}%</span>
+                <div className="flex items-center gap-2">
+                  <KeyframeControls clip={selectedClip} prop="opacity" localTime={localTime} />
+                  <span className="font-mono text-gray-200">{Math.round(opacityValue * 100)}%</span>
+                </div>
               </div>
               <input
                 type="range"
                 min="0"
                 max="1"
                 step="0.05"
-                value={transform?.opacity ?? 1}
+                value={opacityValue}
                 onChange={(e) => updateClipTransform(selectedClip.id, { opacity: parseFloat(e.target.value) })}
                 className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-primary"
               />

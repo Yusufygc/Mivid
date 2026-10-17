@@ -3,6 +3,7 @@ import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import { Logger } from '@/core/logger';
+import { resolveTransform } from '@/core/animation/keyframes';
 
 export type TimeUpdateListener = (time: number) => void;
 
@@ -407,12 +408,10 @@ export class PreviewEngine {
 
       this.ctx.save();
 
-      const scaleX = clip.transform?.scaleX ?? 1;
-      const scaleY = clip.transform?.scaleY ?? 1;
-      const posX = clip.transform?.x ?? 0;
-      const posY = clip.transform?.y ?? 0;
-      const opacity = clip.transform?.opacity ?? 1;
-      const rotation = clip.transform?.rotation ?? 0;
+      const { x: posX, y: posY, scaleX, scaleY, opacity, rotation } = resolveTransform(
+        clip,
+        this.currentTime - clip.startTime
+      );
 
       const timeInClip = this.currentTime - clip.startTime;
       const timeLeftInClip = (clip.startTime + clip.duration) - this.currentTime;
@@ -461,12 +460,10 @@ export class PreviewEngine {
       const text = clip.text;
       this.ctx.save();
 
-      const scaleX = clip.transform?.scaleX ?? 1;
-      const scaleY = clip.transform?.scaleY ?? 1;
-      const posX = clip.transform?.x ?? 0;
-      const posY = clip.transform?.y ?? 0;
-      const opacity = clip.transform?.opacity ?? 1;
-      const rotation = clip.transform?.rotation ?? 0;
+      const { x: posX, y: posY, scaleX, scaleY, opacity, rotation } = resolveTransform(
+        clip,
+        this.currentTime - clip.startTime
+      );
 
       this.ctx.globalAlpha = opacity;
       this.ctx.translate(width / 2 + posX, height / 2 + posY);

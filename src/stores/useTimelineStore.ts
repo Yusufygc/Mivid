@@ -1,7 +1,15 @@
 import { create } from 'zustand';
-import { Track, Clip, Transform, AudioSettings, TextProperties } from '@/types/timeline';
+import { Track, Clip, Transform, AudioSettings, TextProperties, AnimatableProp, Easing } from '@/types/timeline';
 import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
+import {
+  evaluateProp,
+  findKeyframeAt,
+  removeKeyframe as removeKeyframeFrom,
+  scaleKeyframeTimes,
+  shiftKeyframesForStartTrim,
+  upsertKeyframe,
+} from '@/core/animation/keyframes';
 import { Logger } from '@/core/logger';
 import { clampTime } from '@/utils/time';
 import { useProjectStore } from './useProjectStore';
@@ -36,6 +44,10 @@ interface TimelineStoreState {
   splitClipById: (clipId: string, splitTime: number) => boolean;
   updateClipTiming: (clipId: string, startTime: number, duration: number, inPoint?: number, outPoint?: number) => void;
   updateClipTransform: (clipId: string, transform: Partial<Transform>) => void;
+  setClipSpeed: (clipId: string, speed: number) => void;
+  toggleKeyframe: (clipId: string, prop: AnimatableProp) => void;
+  removeKeyframe: (clipId: string, prop: AnimatableProp, keyframeId: string) => void;
+  setKeyframeEasing: (clipId: string, prop: AnimatableProp, keyframeId: string, easing: Easing) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
@@ -55,6 +67,23 @@ const syncProjectDuration = (tracks: Track[]) => {
   }
   const targetDuration = Math.max(5.0, Math.ceil(maxEnd));
   useProjectStore.getState().setDuration(targetDuration);
+};
+
+export const MIN_CLIP_SPEED = 0.25;
+export const MAX_CLIP_SPEED = 4;
+
+/** Writes the animated value of a property into the static transform (used when its last keyframe goes away) */
+const bakeProp = (transform: Transform, prop: AnimatableProp, value: number): Transform => {
+  switch (prop) {
+    case 'x':
+      return { ...transform, x: value };
+    case 'y':
+      return { ...transform, y: value };
+    case 'opacity':
+      return { ...transform, opacity: value };
+    case 'scale':
+      return { ...transform, scaleX: value, scaleY: value };
+  }
 };
 
 const initialTracks: Track[] = [
@@ -381,12 +410,28 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
         clips: t.clips
           .map((c) => {
             if (c.id === clipId) {
+              const newDuration = clampTime(duration);
+              const newInPoint = inPoint !== undefined ? clampTime(inPoint) : c.inPoint;
+              // Keep source range consistent with the timeline length: outPoint = inPoint + duration * speed
+              const newOutPoint =
+                outPoint !== undefined
+                  ? clampTime(outPoint)
+                  : inPoint !== undefined
+                  ? clampTime(newInPoint + newDuration * c.speed)
+                  : c.outPoint;
+
+              // Left-edge trim (start and in-point both moved): keep keyframes anchored to the content
+              const startDelta = validStart - c.startTime;
+              const isStartTrim = inPoint !== undefined && Math.abs(newInPoint - c.inPoint) > 0.0005;
+              const keyframes = isStartTrim ? shiftKeyframesForStartTrim(c.keyframes, startDelta) : c.keyframes;
+
               return {
                 ...c,
                 startTime: validStart,
-                duration: clampTime(duration),
-                inPoint: inPoint !== undefined ? clampTime(inPoint) : c.inPoint,
-                outPoint: outPoint !== undefined ? clampTime(outPoint) : c.outPoint,
+                duration: newDuration,
+                inPoint: newInPoint,
+                outPoint: newOutPoint,
+                keyframes,
               };
             }
             return c;
@@ -401,12 +446,139 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   },
 
   updateClipTransform: (clipId, transformUpdates) => {
+    const { currentTime } = get();
     set((state) => ({
       tracks: state.tracks.map((t) => ({
         ...t,
-        clips: t.clips.map((c) =>
-          c.id === clipId ? { ...c, transform: { ...c.transform, ...transformUpdates } } : c
-        ),
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId) return c;
+
+          // Auto-key: an animated property is edited as a keyframe at the playhead, not as a static value
+          const localTime = clampTime(currentTime - c.startTime, 0, c.duration);
+          const staticUpdates: Partial<Transform> = { ...transformUpdates };
+          let keyframes = c.keyframes;
+
+          const animatedEdits: Array<[AnimatableProp, number | undefined]> = [
+            ['x', transformUpdates.x],
+            ['y', transformUpdates.y],
+            ['opacity', transformUpdates.opacity],
+            ['scale', transformUpdates.scaleX ?? transformUpdates.scaleY],
+          ];
+
+          for (const [prop, value] of animatedEdits) {
+            if (value === undefined || !(c.keyframes?.[prop]?.length ?? 0)) continue;
+            keyframes = upsertKeyframe(keyframes, prop, localTime, value);
+            if (prop === 'scale') {
+              delete staticUpdates.scaleX;
+              delete staticUpdates.scaleY;
+            } else {
+              delete staticUpdates[prop];
+            }
+          }
+
+          return { ...c, keyframes, transform: { ...c.transform, ...staticUpdates } };
+        }),
+      })),
+    }));
+  },
+
+  setClipSpeed: (clipId, speed) => {
+    const newSpeed = Math.round(Math.min(MAX_CLIP_SPEED, Math.max(MIN_CLIP_SPEED, speed)) * 100) / 100;
+    const { tracks } = get();
+
+    const newTracks = tracks.map((t) => {
+      const clip = t.clips.find((c) => c.id === clipId);
+      if (!clip || (clip.type !== 'video' && clip.type !== 'audio')) return t;
+      if (Math.abs(clip.speed - newSpeed) < 0.001) return t;
+
+      // Source range stays the same; the timeline length follows the new speed.
+      // outPoint - inPoint is the exact source span (duration * speed would accumulate rounding on slider drags).
+      const storedSpan = clip.outPoint - clip.inPoint;
+      const sourceSpan = storedSpan > 0.001 ? storedSpan : clip.duration * clip.speed;
+      const newDuration = clampTime(sourceSpan / newSpeed);
+      const delta = newDuration - clip.duration;
+      const oldEnd = clip.startTime + clip.duration;
+
+      return {
+        ...t,
+        clips: t.clips
+          .map((c) => {
+            if (c.id === clipId) {
+              return {
+                ...c,
+                speed: newSpeed,
+                duration: newDuration,
+                outPoint: clampTime(c.inPoint + sourceSpan),
+                keyframes: scaleKeyframeTimes(c.keyframes, newDuration / clip.duration),
+              };
+            }
+            // Ripple: clips that followed this one on the same track move with its end
+            if (c.startTime >= oldEnd - 0.001) {
+              return { ...c, startTime: clampTime(c.startTime + delta, 0) };
+            }
+            return c;
+          })
+          .sort((a, b) => a.startTime - b.startTime),
+      };
+    });
+
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks });
+    Logger.info('useTimelineStore', `Clip ${clipId} speed set to ${newSpeed}x`);
+  },
+
+  toggleKeyframe: (clipId, prop) => {
+    const { currentTime } = get();
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId) return c;
+
+          const localTime = clampTime(currentTime - c.startTime, 0, c.duration);
+          const existing = findKeyframeAt(c.keyframes, prop, localTime);
+
+          if (existing) {
+            const remaining = (c.keyframes?.[prop]?.length ?? 0) - 1;
+            const transform = remaining === 0 ? bakeProp(c.transform, prop, existing.value) : c.transform;
+            return { ...c, transform, keyframes: removeKeyframeFrom(c.keyframes, prop, existing.id) };
+          }
+
+          const value = evaluateProp(c, prop, localTime);
+          return { ...c, keyframes: upsertKeyframe(c.keyframes, prop, localTime, value) };
+        }),
+      })),
+    }));
+  },
+
+  removeKeyframe: (clipId, prop, keyframeId) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId) return c;
+          const target = c.keyframes?.[prop]?.find((k) => k.id === keyframeId);
+          if (!target) return c;
+          const remaining = (c.keyframes?.[prop]?.length ?? 0) - 1;
+          const transform = remaining === 0 ? bakeProp(c.transform, prop, target.value) : c.transform;
+          return { ...c, transform, keyframes: removeKeyframeFrom(c.keyframes, prop, keyframeId) };
+        }),
+      })),
+    }));
+  },
+
+  setKeyframeEasing: (clipId, prop, keyframeId, easing) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          const list = c.keyframes?.[prop];
+          if (c.id !== clipId || !list) return c;
+          return {
+            ...c,
+            keyframes: { ...c.keyframes, [prop]: list.map((k) => (k.id === keyframeId ? { ...k, easing } : k)) },
+          };
+        }),
       })),
     }));
   },

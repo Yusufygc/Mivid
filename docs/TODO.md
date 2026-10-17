@@ -72,6 +72,23 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ---
 
+## 🎞️ Faz 5: Keyframe Animasyonu & Klip Hızı
+- [x] **Keyframe sistemi** (`src/core/animation/keyframes.ts`): Konum X/Y, Ölçek ve Opaklık için klip-yerel zamanlı keyframe'ler, `linear` ve `ease-in-out` (smoothstep) easing
+- [x] Auto-key: keyframe'li bir özellik Inspector'dan düzenlenince playhead'e keyframe yazılır
+- [x] Klip bölünce keyframe eğrisi iki yarıda sürekli kalır; sol kırpmada keyframe'ler içeriğe sabit kalır
+- [x] Inspector: ◇ keyframe ekle/sil, ◀ ▶ önceki/sonraki keyframe; Timeline'da seçili klipte keyframe elmasları
+- [x] **Klip hızı** 0.25x–4x (Inspector slider + hazır değerler), hız değişince süre ve sonraki klipler (ripple) güncellenir
+- [x] Export: hız (`setpts` + `atempo` zinciri), animasyonlu konum (`overlay` ifadesi), ölçek (`scale eval=frame`) ve opaklık (`geq`)
+- [x] Export konum hatası düzeltildi: ölçeği 1 olmayan klip artık preview gibi merkezden konumlanır
+- [x] Timeline kırpma tutamaçları `speed` çarpanını dikkate alır
+- [ ] Rotation keyframe + export (`rotate` filtresi)
+- [ ] Keyframe'i timeline'da sürükleyerek taşıma, keyframe başına easing seçici UI
+- [ ] Preview üzerinde sürükle/ölçekle ile auto-key
+- [ ] Hız eğrisi (ramp), ters oynatma
+- [ ] Undo/Redo: `commandManager.execute` hiçbir store işleminde çağrılmıyor, geri alma pratikte çalışmıyor
+
+---
+
 ## 🔮 Gelecek Fazlar & Geliştirme Fikirleri (Backlog)
 - [ ] Video filtreleri ve Renk Ayarları (LUT, Parlaklık/Kontrast/Doygunluk)
 - [ ] Geçiş efektleri (Cross dissolve, Slide, Fade - `xfade`)

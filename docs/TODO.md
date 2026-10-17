@@ -83,7 +83,8 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Timeline kırpma tutamaçları `speed` çarpanını dikkate alır
 - [ ] Rotation keyframe + export (`rotate` filtresi)
 - [ ] Keyframe'i timeline'da sürükleyerek taşıma, keyframe başına easing seçici UI
-- [ ] Preview üzerinde sürükle/ölçekle ile auto-key
+- [x] Preview üzerinde seçili klibi (video veya metin) fareyle sürükleyerek konumlandırma: Inspector X/Y canlı güncellenir, canvas merkezine yapışır (Alt = serbest), keyframe varsa auto-key
+- [ ] Preview üzerinde köşe tutamaçlarıyla ölçekleme ve döndürme
 - [ ] Hız eğrisi (ramp), ters oynatma
 - [ ] Undo/Redo: `commandManager.execute` hiçbir store işleminde çağrılmıyor, geri alma pratikte çalışmıyor
 

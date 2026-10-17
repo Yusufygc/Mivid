@@ -3,6 +3,7 @@ import { useTimelineStore } from '@/stores/useTimelineStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useAssetStore } from '@/stores/useAssetStore';
 import { previewEngine } from '@/core/preview/previewEngine';
+import { resolveTransform } from '@/core/animation/keyframes';
 import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 
@@ -13,8 +14,90 @@ export const PreviewPlayer: React.FC = () => {
 
   const { project } = useProjectStore();
   const { assets } = useAssetStore();
-  const { tracks, currentTime, isPlaying, setIsPlaying, setCurrentTime } = useTimelineStore();
+  const {
+    tracks,
+    currentTime,
+    isPlaying,
+    selectedClipId,
+    setIsPlaying,
+    setCurrentTime,
+    setSelectedClipId,
+    updateClipTransform,
+  } = useTimelineStore();
   const [playing, setPlaying] = useState(isPlaying);
+  const dragRef = useRef<{
+    clipId: string;
+    startClientX: number;
+    startClientY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  // Show the selected clip's outline on the canvas
+  useEffect(() => {
+    previewEngine.setSelectedClipId(selectedClipId);
+  }, [selectedClipId]);
+
+  /** Pointer position in project pixels, plus how many project pixels one screen pixel covers */
+  const toProjectPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scale = project.width / rect.width;
+    return { x: (e.clientX - rect.left) * scale, y: (e.clientY - rect.top) * scale, scale };
+  };
+
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    const point = toProjectPoint(e);
+    const hit = previewEngine.hitTest(point.x, point.y);
+    if (!hit) return;
+
+    setSelectedClipId(hit.id);
+    const track = tracks.find((t) => t.id === hit.trackId);
+    if (track?.isLocked) return;
+
+    const t = resolveTransform(hit, previewEngine.getCurrentTime() - hit.startTime);
+    dragRef.current = {
+      clipId: hit.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      originX: t.x,
+      originY: t.y,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current;
+    const point = toProjectPoint(e);
+
+    if (!drag) {
+      const hit = previewEngine.hitTest(point.x, point.y);
+      e.currentTarget.style.cursor = hit ? 'move' : 'default';
+      return;
+    }
+
+    let x = drag.originX + (e.clientX - drag.startClientX) * point.scale;
+    let y = drag.originY + (e.clientY - drag.startClientY) * point.scale;
+
+    // Snap to the canvas center lines (hold Alt to move freely)
+    const snapThreshold = 8 * point.scale;
+    const snapX = !e.altKey && Math.abs(x) < snapThreshold;
+    const snapY = !e.altKey && Math.abs(y) < snapThreshold;
+    if (snapX) x = 0;
+    if (snapY) y = 0;
+    previewEngine.setGuides({ x: snapX, y: snapY });
+
+    updateClipTransform(drag.clipId, { x: Math.round(x), y: Math.round(y) });
+  };
+
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    previewEngine.setGuides({ x: false, y: false });
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
 
   // Initialize Canvas
   useEffect(() => {
@@ -97,7 +180,11 @@ export const PreviewPlayer: React.FC = () => {
             ref={canvasRef}
             width={project.width}
             height={project.height}
-            className="w-full h-full object-contain"
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={handleCanvasPointerUp}
+            onPointerCancel={handleCanvasPointerUp}
+            className="w-full h-full object-contain touch-none"
           />
         </div>
       </div>

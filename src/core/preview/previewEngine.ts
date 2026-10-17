@@ -1,4 +1,4 @@
-import { Track } from '@/types/timeline';
+import { Clip, Track } from '@/types/timeline';
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
@@ -6,6 +6,14 @@ import { Logger } from '@/core/logger';
 import { resolveTransform } from '@/core/animation/keyframes';
 
 export type TimeUpdateListener = (time: number) => void;
+
+/** Rectangle in clip-local space: origin is the clip anchor (canvas center + x/y), before scale and rotation */
+export interface LocalRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
 
 export class PreviewEngine {
   private canvas: HTMLCanvasElement | null = null;
@@ -20,6 +28,9 @@ export class PreviewEngine {
   private animationFrameId: number | null = null;
   private timeListeners: Set<TimeUpdateListener> = new Set();
   private previousActiveClipIds: Set<string> = new Set();
+
+  private selectedClipId: string | null = null;
+  private guides = { x: false, y: false };
 
   private currentProject: ProjectSettings | null = null;
   private currentTracks: Track[] = [];
@@ -78,6 +89,114 @@ export class PreviewEngine {
     this.currentProject = project;
     this.currentTracks = tracks;
     this.currentAssets = assets;
+  }
+
+  /** Clip outlined on the canvas while it is active at the playhead */
+  public setSelectedClipId(id: string | null): void {
+    this.selectedClipId = id;
+  }
+
+  /** Center snap guide lines shown while dragging a clip in the preview */
+  public setGuides(guides: { x: boolean; y: boolean }): void {
+    this.guides = guides;
+  }
+
+  /** Bounds of a visual clip in clip-local space (text is measured with its real font) */
+  private getClipLocalRect(clip: Clip): LocalRect | null {
+    if (!this.currentProject) return null;
+    const { width, height } = this.currentProject;
+
+    if (clip.type === 'video' || clip.type === 'image') {
+      return { x0: -width / 2, y0: -height / 2, x1: width / 2, y1: height / 2 };
+    }
+
+    if (clip.type === 'text' && clip.text && this.ctx) {
+      const text = clip.text;
+      const fontSize = text.fontSize || 48;
+      this.ctx.save();
+      this.ctx.font = `${text.fontStyle || 'normal'} ${text.fontWeight || 'bold'} ${fontSize}px ${
+        text.fontFamily || 'Inter, sans-serif'
+      }`;
+      const lines = text.content.split('\n');
+      const maxLineWidth = Math.max(...lines.map((l) => this.ctx!.measureText(l).width));
+      this.ctx.restore();
+
+      const totalHeight = lines.length * fontSize * 1.25;
+      const pad = text.backgroundBox?.enabled ? text.backgroundBox.padding || 12 : 6;
+      const align = text.textAlign || 'center';
+      const left = align === 'left' ? 0 : align === 'right' ? -maxLineWidth : -maxLineWidth / 2;
+      return { x0: left - pad, y0: -totalHeight / 2 - pad, x1: left + maxLineWidth + pad, y1: totalHeight / 2 + pad };
+    }
+
+    return null;
+  }
+
+  /** Topmost visual clip under a point given in project pixels, or null */
+  public hitTest(px: number, py: number): Clip | null {
+    if (!this.currentProject) return null;
+    const { width, height } = this.currentProject;
+
+    const active = TimelineEngine.getActiveClipsAtTime(this.currentTracks, this.currentTime);
+    // Same order as drawComposition: media first, text on top
+    const visuals = [
+      ...active.filter((c) => c.type === 'video' || c.type === 'image'),
+      ...active.filter((c) => c.type === 'text'),
+    ];
+
+    for (let i = visuals.length - 1; i >= 0; i--) {
+      const clip = visuals[i];
+      const rect = this.getClipLocalRect(clip);
+      if (!rect) continue;
+
+      const t = resolveTransform(clip, this.currentTime - clip.startTime);
+      const dx = px - (width / 2 + t.x);
+      const dy = py - (height / 2 + t.y);
+      const rad = (t.rotation * Math.PI) / 180;
+      const lx = (dx * Math.cos(rad) + dy * Math.sin(rad)) / (t.scaleX || 1);
+      const ly = (-dx * Math.sin(rad) + dy * Math.cos(rad)) / (t.scaleY || 1);
+
+      if (lx >= rect.x0 && lx <= rect.x1 && ly >= rect.y0 && ly <= rect.y1) return clip;
+    }
+    return null;
+  }
+
+  private drawSelectionOverlay(activeClips: Clip[]): void {
+    if (!this.ctx || !this.currentProject) return;
+    const { width, height } = this.currentProject;
+    const ctx = this.ctx;
+    const lineWidth = Math.max(2, width / 640);
+
+    const selected = activeClips.find((c) => c.id === this.selectedClipId);
+    const rect = selected ? this.getClipLocalRect(selected) : null;
+    if (selected && rect) {
+      const t = resolveTransform(selected, this.currentTime - selected.startTime);
+      ctx.save();
+      ctx.translate(width / 2 + t.x, height / 2 + t.y);
+      if (t.rotation !== 0) ctx.rotate((t.rotation * Math.PI) / 180);
+      ctx.scale(t.scaleX, t.scaleY);
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = lineWidth / Math.max(0.01, Math.min(Math.abs(t.scaleX), Math.abs(t.scaleY)));
+      ctx.setLineDash([lineWidth * 4, lineWidth * 3]);
+      ctx.strokeRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+      ctx.restore();
+    }
+
+    if (this.guides.x || this.guides.y) {
+      ctx.save();
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      if (this.guides.x) {
+        ctx.moveTo(width / 2, 0);
+        ctx.lineTo(width / 2, height);
+      }
+      if (this.guides.y) {
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   public getOrCreateVideoElement(asset: MediaAsset): HTMLVideoElement {
@@ -541,6 +660,9 @@ export class PreviewEngine {
 
       this.ctx.restore();
     }
+
+    // 5. Editing overlay (selection outline + snap guides), preview only
+    this.drawSelectionOverlay(activeClips);
   }
 
   public cleanup(): void {

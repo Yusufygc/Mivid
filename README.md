@@ -61,6 +61,13 @@ Tarayıcınızda `http://localhost:5173` adresinde açılır.
 ```bash
 npm run tauri dev
 ```
+Bu komut Rust (rustup) ve Visual Studio "C++ ile masaüstü geliştirme" iş yükünü (MSVC + Windows SDK) gerektirir.
+
+**Rust derlemeden (hızlı yol):** `src-tauri/src` değişmediği sürece daha önce derlenmiş debug kabuğu kullanılabilir. Arayüz vite'tan canlı yüklendiği için frontend değişiklikleri anında görünür:
+```bash
+npm run desktop
+```
+Script vite'ı başlatır, `src-tauri/target/debug/app.exe`'yi açar ve pencereyi birincil monitörün ortasına taşır (pencere bağlı olmayan/sanal bir ekranda açılırsa kaybolmasın diye). Rust kodu veya `tauri.conf.json` değiştiyse `npm run tauri dev` ile yeniden derlemek gerekir.
 
 ### 3. Testleri Çalıştırma:
 ```bash

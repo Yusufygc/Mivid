@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "lint": "oxlint",
     "preview": "vite preview",
+    "desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-desktop.ps1",
     "tauri": "tauri"
   },
   "dependencies": {

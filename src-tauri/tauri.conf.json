@@ -15,6 +15,7 @@
         "title": "CapCut Clone - Video Editor",
         "width": 1280,
         "height": 720,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }

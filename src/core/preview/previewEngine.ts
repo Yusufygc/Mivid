@@ -40,6 +40,9 @@ export class PreviewEngine {
   private previousActiveClipIds: Set<string> = new Set();
 
   private selectedClipId: string | null = null;
+  /** True while a visible clip's picture is not decoded yet (right after adding a clip, seeking far, slow files) */
+  private loading = false;
+  private loadingListeners: Set<(loading: boolean) => void> = new Set();
   private guides = { x: false, y: false };
   private effectRenderer = new RegionEffectRenderer();
   private chromaRenderer = new ChromaKeyRenderer();
@@ -109,6 +112,21 @@ export class PreviewEngine {
   private sourceTime(clip: Clip): number {
     if (clip.freeze) return Math.max(0, clip.inPoint);
     return Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
+  }
+
+  public getIsLoading(): boolean {
+    return this.loading;
+  }
+
+  public subscribeLoading(listener: (loading: boolean) => void): () => void {
+    this.loadingListeners.add(listener);
+    return () => this.loadingListeners.delete(listener);
+  }
+
+  private setLoading(loading: boolean): void {
+    if (loading === this.loading) return;
+    this.loading = loading;
+    this.loadingListeners.forEach((listener) => listener(loading));
   }
 
   /** Clip outlined on the canvas while it is active at the playhead */
@@ -732,6 +750,7 @@ export class PreviewEngine {
     const activeClips = TimelineEngine.getActiveClipsAtTime(this.currentTracks, this.currentTime);
 
     // 3. Draw active video / image / overlay clips
+    let waitingForPicture = false;
     for (const clip of activeClips) {
       if (clip.type !== 'video' && clip.type !== 'image') continue;
 
@@ -743,6 +762,7 @@ export class PreviewEngine {
         clip.type === 'image' ? this.getOrCreateImageElement(asset) : this.getOrCreateVideoElement(asset);
       const srcW = media instanceof HTMLImageElement ? media.naturalWidth : media.videoWidth;
       const srcH = media instanceof HTMLImageElement ? media.naturalHeight : media.videoHeight;
+      if (srcW === 0 || srcH === 0 || (media instanceof HTMLVideoElement && media.readyState < 2)) waitingForPicture = true;
       // Green screen: the keyed copy replaces the footage (the blurred backdrop below still uses the original)
       let drawable: CanvasImageSource = media;
       if (clip.chromaKey && srcW > 0 && srcH > 0) {
@@ -821,6 +841,8 @@ export class PreviewEngine {
       }
       this.ctx.restore();
     }
+
+    this.setLoading(waitingForPicture);
 
     // 3b. Region effects (blur, mosaic, black box) act on the video drawn so far; text stays sharp on top
     for (const clip of activeClips) {
@@ -939,6 +961,7 @@ export class PreviewEngine {
     }
     this.videoPool.clear();
     this.imagePool.clear();
+    this.loadingListeners.clear();
     this.audioPool.clear();
     this.timeListeners.clear();
     this.previousActiveClipIds.clear();

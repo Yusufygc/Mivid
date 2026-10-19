@@ -40,7 +40,7 @@ export const Inspector: React.FC = () => {
 
   if (!selectedClip) {
     return (
-      <div className="w-72 bg-surface border-l border-surface-border p-4 flex flex-col items-center justify-center text-center select-none text-gray-500">
+      <div className="w-56 lg:w-72 bg-surface border-l border-surface-border p-4 flex flex-col items-center justify-center text-center select-none text-gray-500">
         <Sliders className="w-8 h-8 mb-2 opacity-30" />
         <p className="text-xs font-medium">Klip Seçilmedi</p>
         <p className="text-[11px] mt-1 text-gray-600">Özelliklerini düzenlemek için zaman çizelgesinden bir klip seçin</p>
@@ -62,7 +62,7 @@ export const Inspector: React.FC = () => {
   const isEffect = selectedClip.type === 'effect';
 
   return (
-    <div className="w-72 bg-surface border-l border-surface-border flex flex-col h-full overflow-y-auto select-none">
+    <div className="w-56 lg:w-72 bg-surface border-l border-surface-border flex flex-col h-full overflow-y-auto select-none">
       {/* Header */}
       <div className="p-3 border-b border-surface-border flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-200">

@@ -60,7 +60,7 @@ export const MediaPool: React.FC = () => {
   };
 
   return (
-    <div className="w-80 bg-surface border-r border-surface-border flex flex-col h-full select-none">
+    <div className="w-56 lg:w-80 bg-surface border-r border-surface-border flex flex-col h-full select-none">
       {/* Panel Navigation Tabs */}
       <div className="p-2 border-b border-surface-border flex items-center gap-1 bg-surface-light/30">
         <button
@@ -72,7 +72,7 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <Film className="w-3.5 h-3.5" />
-          <span>Medyalar</span>
+          <span className="hidden lg:inline">Medyalar</span>
         </button>
 
         <button
@@ -84,7 +84,7 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <Type className="w-3.5 h-3.5" />
-          <span>Metinler</span>
+          <span className="hidden lg:inline">Metinler</span>
         </button>
 
         <button
@@ -96,7 +96,7 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Geçişler</span>
+          <span className="hidden lg:inline">Geçişler</span>
         </button>
 
         <button
@@ -108,7 +108,7 @@ export const MediaPool: React.FC = () => {
           }`}
         >
           <BoxSelect className="w-3.5 h-3.5" />
-          <span>Efektler</span>
+          <span className="hidden lg:inline">Efektler</span>
         </button>
       </div>
 

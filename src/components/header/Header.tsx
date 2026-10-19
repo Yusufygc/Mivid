@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
-  const { project, setProjectName, setAspectRatio } = useProjectStore();
+  const { project, setProjectName, setAspectRatio, setFps } = useProjectStore();
   const [canUndo, setCanUndo] = React.useState(commandManager.canUndo());
   const [canRedo, setCanRedo] = React.useState(commandManager.canRedo());
 
@@ -22,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
   }, []);
 
   return (
-    <header className="h-14 bg-surface border-b border-surface-border px-4 flex items-center justify-between select-none">
+    <header className="h-14 bg-surface border-b border-surface-border px-2 lg:px-4 gap-2 flex items-center justify-between select-none overflow-hidden">
       {/* Brand & Project Info */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-primary font-bold text-lg tracking-wider">
@@ -38,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
           type="text"
           value={project.name}
           onChange={(e) => setProjectName(e.target.value)}
-          className="bg-transparent text-sm font-medium text-gray-200 hover:bg-surface-light focus:bg-surface-light px-2 py-1 rounded border border-transparent focus:border-surface-border outline-none transition-all w-48"
+          className="bg-transparent text-sm font-medium text-gray-200 hover:bg-surface-light focus:bg-surface-light px-2 py-1 rounded border border-transparent focus:border-surface-border outline-none transition-all w-28 lg:w-48"
           placeholder="Proje Adı..."
         />
       </div>
@@ -63,6 +63,25 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
           >
             <Redo2 className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Frame rate: match it to the footage (a 60 fps clip in a 30 fps project drops every other frame) */}
+        <div
+          className="flex items-center gap-1.5 bg-surface-light px-2 py-1 rounded-lg border border-surface-border text-xs text-gray-300"
+          title="Proje kare hızı (FPS)"
+        >
+          <select
+            value={project.fps}
+            onChange={(e) => setFps(Number(e.target.value))}
+            className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer"
+            aria-label="Kare hızı"
+          >
+            {[24, 25, 30, 50, 60].map((fps) => (
+              <option key={fps} value={fps} className="bg-surface text-white">
+                {fps} FPS
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Aspect Ratio Selector */}
@@ -90,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
           className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-primary to-primary-hover text-black font-semibold text-xs shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
         >
           <Download className="w-4 h-4" />
-          <span>Dışa Aktar (Export)</span>
+          <span className="hidden lg:inline">Dışa Aktar (Export)</span><span className="lg:hidden">Dışa Aktar</span>
         </button>
       </div>
     </header>

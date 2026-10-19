@@ -1,4 +1,4 @@
-# Sonraki Oturum Planı (NEXT_SESSION.md)
+﻿# Sonraki Oturum Planı (NEXT_SESSION.md)
 
 Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nereden devam edileceğini anlatır. Genel görev takibi için `TODO.md`'ye bakın.
 
@@ -7,7 +7,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 ## 1. Şu anki durum
 
 - `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, renk), `ea73c95` (blur sistemi). **Bu oturumun son işleri henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
-- Testler: 229 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- Testler: 250 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
 - **Ürün adı Mivid** (arayüz başlığı, `index.html`, `tauri.conf.json`, README/docs, `package.json`). `tauri.conf.json` derleme zamanında gömüldüğü için eski `app.exe`'nin pencere başlığı yeniden derlenene kadar "CapCut Clone" kalır; `npm run desktop` ikisini de tanır.
 - **Karar:** bu projede REA / CapCut incelemesi yok; özgün, işi kolaylaştıran özellikler yapılıyor (hafızada kayıtlı).
 - **Commit bekleyen işler** (hepsi tarayıcıda gerçek fare/klavye ile, export ayrıca gerçek ffmpeg ile denendi):
@@ -17,6 +17,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
   - **Çoklu klip sürükleme:** `moveClipsBy`
   - **Sessiz medya:** `core/media/probe.ts`, `MediaAsset.hasAudio`, `ExportModal` export öncesi probe
   - **Kanal üstünlüğü düzeltmesi:** `TimelineEngine.getActiveClipsAtTime` ve export `layers` (üst kanal üstte, `zIndex` önce)
+  - **QA düzeltme turu:** metin export'unda gerçek yazı tipi dosyası (`fonts.ts`), yeni klip V1'e, yeniden boyutlanır timeline ve dar pencere düzeni, önizleme yükleme göstergesi, Oto keyframe, FPS seçici. Gerçek Reels kaynaklarıyla yeniden denendi: başlık Impact kalın çıktı, bölge blur keyframe ile LCD'yi takip etti, 60 fps export 36.8 sn.
 - **Yapılmayanlar:** karışım modları (FFmpeg `blend` alfa'yı doğru karıştırmadığı için preview/export eşleşmiyor), çoklu seçimde birlikte kırpma.
 
 ## 2. Ortam notları
@@ -56,12 +57,12 @@ CapCut 9.6.0.4097 kurulum klasörü (`C:\Users\yusuf\AppData\Local\CapCut\Apps\9
 
 ## 5. Bilinen sorunlar ve sınırlamalar
 
-- **Yeni video klip varsayılan olarak "Video 2 (Overlay)" kanalına düşüyor**, "Ana Video (V1)" yerine. `TimelineEngine.findOrCreateTrackForPlacement` kanalları sırayla gezip ilk boş olanı seçiyor. Beklenen davranış olup olmadığı netleştirilmeli.
+- ~~Yeni video klip Overlay kanalına düşüyor~~ düzeltildi: ana video kanalı önce denenir.
 - **`videoPool` asset başına tek `<video>`:** aynı asset'in iki klibi aynı anda aktifse (örn. üst üste iki kopya) aynı elemanı paylaşır ve çakışır.
-- **Preview ve export videoyu tüm kareye gerdiriyor** (en-boy oranı korunmuyor, `drawImage(video, -W/2, -H/2, W, H)`). Aspect-fit seçeneği yok.
+- Klip `fit` (Gerdir/Sığdır/Doldur) var; yalnızca eski projelerdeki klipler gerdirilmiş kalır.
 - **Sol kırpma + keyframe:** sol tutamacı içeri sürükleyince kırpılan bölgedeki keyframe'ler kaybolur; geri sürükleyince eğri orijinaline dönmez (sınır keyframe'inin değeri tutulur).
 - **Metin export'u:** çok satırlı metin export'ta tek satıra çevriliyor (`escapeFFmpegText` `\n` -> boşluk); preview çok satır çiziyor.
-- **Export'ta ffmpeg sürümü:** Tauri önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanıyor, o çalışıyor. Proje köküne konulan `ffmpeg.exe` (2025-08 full build) `drawtext`'te fontconfig yokken segfault veriyor (`fontfile=` verilmezse). Export testi yaparken `C:\ffmpeg\bin` sürümünü kullanın.
+- **Export'ta ffmpeg sürümü:** Tauri önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanıyor, o çalışıyor. Proje köküne konulan `ffmpeg.exe` (2025-08 full build) `drawtext`'te fontconfig yokken segfault veriyor (`fontfile=` verilmezse); artık export `fontfile=` veriyor. Export testi yaparken `C:\ffmpeg\bin` sürümünü kullanın.
 - **Film şeridi** her video asset'i için 12 kare, tüm asset'e esnetilmiş tek şerit (kareler yatayda esnetilir); dalga formu 10 dakikadan uzun seslerde üretilmez.
 - **Blur paritesi:** kenar yumuşatma preview'da bulanık maske, export'ta aynı sigma ile `gblur`'lu şekil; ikisi de gaussian ama piksel düzeyinde birebir değil. Preview'da blur canvas kenarında saydama doğru solar, export'ta kenar kopyalanır (sadece tuval kenarındaki bölgelerde fark).
 - **Bulanık arka plan export'ta** klip opaklığını sabit değerle alır (opaklık keyframe'i arka plana uygulanmaz) ve slide/wipe geçişinde arka plan kaymaz.
@@ -82,3 +83,5 @@ CapCut 9.6.0.4097 kurulum klasörü (`C:\Users\yusuf\AppData\Local\CapCut\Apps\9
 - Preview'da transform'u her zaman `resolveTransform(clip, currentTime - clip.startTime)` ile okuyun; `clip.transform`'u doğrudan okumayın.
 - Keyframe'li bir özellik `updateClipTransform` ile düzenlenirse playhead'e keyframe yazılır (auto-key); keyframe'siz özellik statik güncellenir.
 - Export'ta kaynak süresi `duration * speed`; `outPoint`'e güvenilmez (eski Inspector "Sıfırla" bunu bozuyordu, düzeltildi).
+
+- **Yeni QA notu:** yeniden boyutlanır timeline ve `minWidth/minHeight` Tauri'de elle denenmedi (`tauri.conf.json` derleme gerektirir). Yükleme göstergesi yalnızca birim testli; gerçek yavaş diskte gözle görülmedi. Renk ön ayarı + ölçek keyframe + çapraz geçiş yeniden denendi: export 55 sn, 60 fps; zoom 1.285x kaynakla PSNR 34.9 dB eşleşti, geçiş 19-20 sn arasında karışıyor.

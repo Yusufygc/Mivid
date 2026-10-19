@@ -186,3 +186,48 @@ describe('TimelineEngine.getActiveClipsAtTime stacking', () => {
     expect(TimelineEngine.getActiveClipsAtTime(tracks, 1).map((c) => c.id)).toEqual(['upper', 'lower']);
   });
 });
+
+describe('TimelineEngine.findOrCreateTrackForPlacement', () => {
+  const lane = (id: string, type: Track['type'], clips: Clip[] = []): Track => ({
+    id,
+    name: id,
+    type,
+    isMuted: false,
+    isLocked: false,
+    isHidden: false,
+    clips,
+  });
+
+  // The default layout: the overlay (PiP) lane is listed above the main video lane
+  const defaultTracks = (videoClips: Clip[] = []): Track[] => [
+    lane('text', 'text'),
+    lane('overlay', 'overlay'),
+    lane('video', 'video', videoClips),
+    lane('audio', 'audio'),
+  ];
+
+  it('puts footage on the main video track first, not on the overlay lane', () => {
+    const result = TimelineEngine.findOrCreateTrackForPlacement(defaultTracks(), 'video', 0, 5);
+    expect(result.targetTrackId).toBe('video');
+  });
+
+  it('falls back to the overlay lane when the main video track is busy at that time', () => {
+    const tracks = defaultTracks([createMockClip('a', 0, 5)]);
+    expect(TimelineEngine.findOrCreateTrackForPlacement(tracks, 'video', 1, 2).targetTrackId).toBe('overlay');
+    // free again after the clip
+    expect(TimelineEngine.findOrCreateTrackForPlacement(tracks, 'video', 6, 2).targetTrackId).toBe('video');
+  });
+
+  it('creates a new lane above the video lanes when both are busy', () => {
+    const tracks = defaultTracks([createMockClip('a', 0, 5)]);
+    tracks[1].clips = [createMockClip('b', 0, 5)];
+    const { targetTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(tracks, 'video', 1, 2);
+    expect(updatedTracks).toHaveLength(5);
+    expect(updatedTracks.findIndex((t) => t.id === targetTrackId)).toBeLessThan(updatedTracks.findIndex((t) => t.id === 'overlay'));
+  });
+
+  it('still keeps audio and text on their own kinds of lanes', () => {
+    expect(TimelineEngine.findOrCreateTrackForPlacement(defaultTracks(), 'audio', 0, 5).targetTrackId).toBe('audio');
+    expect(TimelineEngine.findOrCreateTrackForPlacement(defaultTracks(), 'text', 0, 3).targetTrackId).toBe('text');
+  });
+});

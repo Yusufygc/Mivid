@@ -125,6 +125,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Çoklu seçilen kliplerin birlikte sürüklenmesi (çarpışma ve kilitli kanal korumalı, 0'ın altına inmez); sürükleme sonrası seçim korunur
 - [x] Sessiz medya: ses akışı olmayan dosyalar export'ta ses istemiyor. Masaüstünde export öncesi `ffmpeg -i` çıktısından anlaşılır (`core/media/probe.ts`, yeni Rust komutu gerekmez)
 - [x] Kanal üstünlüğü düzeltildi: timeline'da üstteki kanal artık önizlemede ve export'ta üstte çiziliyor (eskiden ters). Export artık `zIndex`'i de preview gibi dikkate alıyor
+- [x] QA düzeltme turu (gerçek Reels kurgusu denendi): export artık metin yazı tipini gerçek dosyayla seçiyor (`core/export/fonts.ts`, `drawtext fontfile=`; Impact/kalın/italik doğru çıkıyor); yeni video klip ana video kanalına (V1) düşüyor; sabit yerleşim: dar pencerede başlık/panel sığıyor, timeline yüksekliği sürükleyerek ayarlanıyor (`mivid.timelineHeight`), `minWidth 960`/`minHeight 600`; önizlemede "Görüntü yükleniyor…" göstergesi; "Oto keyframe" (taşı/ölçekle/döndür = playhead'e keyframe, ilk keyframe başa eski değeri sabitler); başlıkta FPS seçici (24/25/30/50/60)
 - [ ] Karışım modları (multiply, screen, overlay): preview'da kolay, FFmpeg `blend` filtresi şeffaf katmanı ve alfa'yı doğru karıştırmadığı için preview ile export eşleşmiyor; ayrı tasarım gerekir
 - [ ] Çoklu seçimde birlikte kırpma
 

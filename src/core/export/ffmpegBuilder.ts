@@ -2,6 +2,7 @@ import { Clip, Keyframe, Track } from '@/types/timeline';
 import { hasKeyframes } from '@/core/animation/keyframes';
 import { buildFadeFilters } from '@/core/audio/fades';
 import { ffmpegEqFilter } from '@/core/color/colorGrading';
+import { escapeFilterPath, resolveFontFile, WINDOWS_FONT_DIRECTORY } from './fonts';
 import { ffmpegChromakeyFilter } from '@/core/chroma/chromaKey';
 import { backdropSigmaPx, blurSigmaPx, featherSigmaPx, pixelBlockPx } from '@/core/effects/regionEffects';
 import { ffmpegFitFilter } from '@/core/layout/fit';
@@ -14,6 +15,8 @@ export interface ExportOptions {
   preset?: 'ultrafast' | 'fast' | 'medium' | 'slow';
   videoBitrate?: string;
   audioBitrate?: string;
+  /** Folder with the font files text is drawn with (default: the Windows fonts folder). null = leave the font to FFmpeg. */
+  fontDirectory?: string | null;
 }
 
 const escapeFFmpegText = (str: string): string => {
@@ -99,10 +102,21 @@ const needsTextLayer = (clip: Clip): boolean =>
   hasKeyframes(clip) || Math.abs(clip.transform?.rotation ?? 0) > 1e-6;
 
 /** drawtext parameters shared by the direct (static) path and the layer path */
-const buildDrawTextParams = (clip: Clip, fontSize: number, xPos: string, yPos: string, enable?: string): string[] => {
+const buildDrawTextParams = (
+  clip: Clip,
+  fontSize: number,
+  xPos: string,
+  yPos: string,
+  enable?: string,
+  fontDirectory: string | null = WINDOWS_FONT_DIRECTORY
+): string[] => {
   const text = clip.text!;
   const params: string[] = [
     `text='${escapeFFmpegText(text.content)}'`,
+    // The font family and weight of the preview, as a font file: drawtext has no notion of a CSS font family
+    ...(fontDirectory === null
+      ? []
+      : [`fontfile='${escapeFilterPath(resolveFontFile(text.fontFamily, text.fontWeight, text.fontStyle, fontDirectory))}'`]),
     `fontsize=${fontSize}`,
     `fontcolor=${hexToFFmpegColor(text.color || '#FFFFFF')}`,
     `x=${xPos}`,
@@ -573,7 +587,14 @@ export class FFmpegCommandBuilder {
           // Text is drawn once, unscaled, on a transparent project-sized layer anchored at its center.
           // Scale, rotation, position and opacity then go through the same pipeline as video clips.
           const fontSize = clip.text.fontSize || 48;
-          const drawParams = buildDrawTextParams(clip, fontSize, textAnchorX(clip), '(h-text_h)/2');
+          const drawParams = buildDrawTextParams(
+            clip,
+            fontSize,
+            textAnchorX(clip),
+            '(h-text_h)/2',
+            undefined,
+            options.fontDirectory === undefined ? WINDOWS_FONT_DIRECTORY : options.fontDirectory
+          );
           const source =
             `color=c=black@0.0:s=${project.width}x${project.height}:r=${project.fps}:d=${exportDuration.toFixed(2)},` +
             `format=rgba,drawtext=${drawParams.join(':')},format=yuva420p`;
@@ -600,7 +621,14 @@ export class FFmpegCommandBuilder {
         const xPos = `${textAnchorX(clip)}+(${posX})`;
         const yPos = `(h-text_h)/2+(${posY})`;
 
-        const drawParams = buildDrawTextParams(clip, fontSize, xPos, yPos, `between(t,${startTime},${endTime})`);
+        const drawParams = buildDrawTextParams(
+          clip,
+          fontSize,
+          xPos,
+          yPos,
+          `between(t,${startTime},${endTime})`,
+          options.fontDirectory === undefined ? WINDOWS_FONT_DIRECTORY : options.fontDirectory
+        );
         filterGraph.push(`[${currentVideoBase}]drawtext=${drawParams.join(':')}[${textTag}]`);
         currentVideoBase = textTag;
         textIndex++;

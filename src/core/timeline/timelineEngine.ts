@@ -92,9 +92,10 @@ export class TimelineEngine {
     duration: number
   ): { targetTrackId: string; updatedTracks: Track[] } {
     // Treat 'video' and 'overlay' as compatible video layers
-    const matchingTracks = tracks.filter((t) =>
-      type === 'video' || type === 'overlay' ? t.type === 'video' || t.type === 'overlay' : t.type === type
-    );
+    // Main video lanes come first: footage goes on the main video track, the overlay (PiP) lanes only take what does not fit
+    const matchingTracks = tracks
+      .filter((t) => (type === 'video' || type === 'overlay' ? t.type === 'video' || t.type === 'overlay' : t.type === type))
+      .sort((a, b) => (a.type === 'overlay' ? 1 : 0) - (b.type === 'overlay' ? 1 : 0));
 
     // 1. Find existing free track of matching type
     for (const track of matchingTracks) {

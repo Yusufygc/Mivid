@@ -317,9 +317,9 @@ export const Timeline: React.FC = () => {
   };
 
   return (
-    <div ref={containerRef} className="h-80 bg-timeline-bg border-t border-surface-border flex flex-col select-none">
+    <div ref={containerRef} className="h-full bg-timeline-bg border-t border-surface-border flex flex-col select-none">
       {/* Timeline Controls Header */}
-      <div className="h-11 bg-surface px-4 border-b border-surface-border flex items-center justify-between flex-shrink-0 z-40">
+      <div className="h-11 bg-surface px-2 lg:px-4 gap-3 border-b border-surface-border flex items-center justify-between flex-shrink-0 z-40 overflow-x-auto whitespace-nowrap">
         {/* Editing Tools */}
         <div className="flex items-center gap-2">
           <button

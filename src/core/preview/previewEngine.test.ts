@@ -223,6 +223,24 @@ describe('PreviewEngine.hitTest', () => {
     expect(engine.hitTest(100, 250)).toBeNull();
   });
 
+  it('tells loading listeners only when the state changes and stops after unsubscribe', () => {
+    const calls: boolean[] = [];
+    const off = engine.subscribeLoading((loading) => calls.push(loading));
+    const setLoading = (value: boolean) => (engine as unknown as { setLoading: (v: boolean) => void }).setLoading(value);
+
+    expect(engine.getIsLoading()).toBe(false);
+    setLoading(true);
+    setLoading(true);
+    setLoading(false);
+    expect(calls).toEqual([true, false]);
+    expect(engine.getIsLoading()).toBe(false);
+
+    off();
+    setLoading(true);
+    expect(calls).toEqual([true, false]);
+    expect(engine.getIsLoading()).toBe(true);
+  });
+
   it('has no handles when nothing is selected or the selected clip is not active', () => {
     setup([baseClip('v', 'video', { startTime: 3 })]);
     expect(engine.getSelectionGeometry()).toBeNull();

@@ -599,6 +599,83 @@ describe('FFmpegCommandBuilder', () => {
     });
   });
 
+  describe('text fonts', () => {
+    const textClip = (text: Partial<NonNullable<Clip['text']>>): Track[] => [
+      {
+        id: 'tt',
+        name: 'Text',
+        type: 'text',
+        isMuted: false,
+        isLocked: false,
+        isHidden: false,
+        clips: [
+          {
+            id: 't1',
+            trackId: 'tt',
+            assetId: 'text-1',
+            name: 'Hello',
+            type: 'text',
+            startTime: 0,
+            duration: 3,
+            inPoint: 0,
+            outPoint: 3,
+            speed: 1,
+            transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex: 5 },
+            audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+            text: {
+              content: 'Hello',
+              fontFamily: 'Arial',
+              fontSize: 60,
+              color: '#FFFFFF',
+              fontWeight: 'normal',
+              textAlign: 'center',
+              ...text,
+            },
+          },
+        ],
+      },
+    ];
+
+    const graph = (text: Partial<NonNullable<Clip['text']>>, options: Partial<{ fontDirectory: string | null }> = {}) =>
+      FFmpegCommandBuilder.buildExportCommand(mockProject, textClip(text), mockAssets, {
+        outputPath: 'out.mp4',
+        ...options,
+      }).filterComplex;
+
+    it('gives drawtext the font file of the chosen family and weight', () => {
+      expect(graph({ fontFamily: 'Impact', fontWeight: 'bold' })).toContain("fontfile='C\\:/Windows/Fonts/impact.ttf'");
+      expect(graph({ fontFamily: 'Arial', fontWeight: 'bold' })).toContain("fontfile='C\\:/Windows/Fonts/arialbd.ttf'");
+      expect(graph({ fontFamily: 'Georgia', fontWeight: 'normal', fontStyle: 'italic' })).toContain('georgiai.ttf');
+    });
+
+    it('falls back to Arial for families that are not installed with Windows', () => {
+      expect(graph({ fontFamily: 'Inter', fontWeight: 'bold' })).toContain('arialbd.ttf');
+      expect(graph({ fontFamily: 'Montserrat' })).toContain('arial.ttf');
+    });
+
+    it('reads the first family of a CSS font stack', () => {
+      expect(graph({ fontFamily: '"Courier New", monospace', fontWeight: 'normal' })).toContain('cour.ttf');
+    });
+
+    it('can leave the font to FFmpeg when there is no font folder', () => {
+      expect(graph({ fontFamily: 'Impact' }, { fontDirectory: null })).not.toContain('fontfile');
+    });
+
+    it('uses the font on the transparent text layer too', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        (() => {
+          const tracks = textClip({ fontFamily: 'Impact', fontWeight: 'bold' });
+          tracks[0].clips[0].transform.rotation = 10;
+          return tracks;
+        })(),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).toContain('format=rgba,drawtext=text=\'Hello\':fontfile=\'C\\:/Windows/Fonts/impact.ttf\'');
+    });
+  });
+
   describe('rotation and text layers', () => {
     const buildTextTrack = (clipOverrides: Partial<Clip>): Track[] => [
       {

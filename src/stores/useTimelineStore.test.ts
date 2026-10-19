@@ -576,3 +576,61 @@ describe('useTimelineStore - freeze frame', () => {
     expect(clips().find((c) => c.id === frozen.id)).toMatchObject({ speed: 1, duration: 2 });
   });
 });
+
+describe('useTimelineStore - auto keyframe', () => {
+  beforeEach(() => {
+    setTracks([makeClip('a', 2, 6)]);
+    useTimelineStore.setState({ autoKeyframe: false, currentTime: 2 });
+  });
+
+  it('is off by default: moving a clip changes the static position only', () => {
+    useTimelineStore.setState({ currentTime: 4 });
+    useTimelineStore.getState().updateClipTransform('a', { x: 100 });
+    expect(getClip('a')!.transform.x).toBe(100);
+    expect(getClip('a')!.keyframes).toBeUndefined();
+  });
+
+  it('when on, the first move at a later time keys the old value at the start and the new one at the playhead', () => {
+    useTimelineStore.getState().setAutoKeyframe(true);
+    useTimelineStore.setState({ currentTime: 4 }); // clip-local 2
+    useTimelineStore.getState().updateClipTransform('a', { x: 100, y: 40 });
+
+    const clip = getClip('a')!;
+    expect(clip.keyframes!.x!.map((k) => [k.time, k.value])).toEqual([[0, 0], [2, 100]]);
+    expect(clip.keyframes!.y!.map((k) => [k.time, k.value])).toEqual([[0, 0], [2, 40]]);
+    expect(clip.transform.x).toBe(0); // the static value stays, the keyframes carry the motion
+  });
+
+  it('follows a subject: a second move at another time adds a second key without touching the first', () => {
+    useTimelineStore.getState().setAutoKeyframe(true);
+    useTimelineStore.setState({ currentTime: 4 });
+    useTimelineStore.getState().updateClipTransform('a', { x: 100 });
+    useTimelineStore.setState({ currentTime: 6 });
+    useTimelineStore.getState().updateClipTransform('a', { x: 250 });
+
+    expect(getClip('a')!.keyframes!.x!.map((k) => [k.time, k.value])).toEqual([[0, 0], [2, 100], [4, 250]]);
+  });
+
+  it('a drag (many moves at the same time) keeps one key at that time', () => {
+    useTimelineStore.getState().setAutoKeyframe(true);
+    useTimelineStore.setState({ currentTime: 4 });
+    for (const x of [10, 20, 30, 40]) useTimelineStore.getState().updateClipTransform('a', { x });
+    expect(getClip('a')!.keyframes!.x).toHaveLength(2);
+    expect(getClip('a')!.keyframes!.x![1].value).toBe(40);
+  });
+
+  it('at the very start only one key is needed', () => {
+    useTimelineStore.getState().setAutoKeyframe(true);
+    useTimelineStore.getState().updateClipTransform('a', { x: 30 }); // playhead on the clip start
+    expect(getClip('a')!.keyframes!.x).toHaveLength(1);
+  });
+
+  it('works for scale and rotation too', () => {
+    useTimelineStore.getState().setAutoKeyframe(true);
+    useTimelineStore.setState({ currentTime: 5 });
+    useTimelineStore.getState().updateClipTransform('a', { scaleX: 2, scaleY: 2, rotation: 30 });
+    const clip = getClip('a')!;
+    expect(clip.keyframes!.scale!.map((k) => k.value)).toEqual([1, 2]);
+    expect(clip.keyframes!.rotation!.map((k) => k.value)).toEqual([0, 30]);
+  });
+});

@@ -21,6 +21,7 @@ import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import {
   ANIMATABLE_PROPS,
   evaluateProp,
+  getBaseValue,
   findKeyframeAt,
   KEYFRAME_EPSILON,
   moveKeyframesAtTime,
@@ -38,6 +39,11 @@ import { useProjectStore } from './useProjectStore';
 interface TimelineStoreState {
   tracks: Track[];
   selectedClipId: string | null;
+  /**
+   * When on, moving, scaling or rotating a clip writes keyframes at the playhead even if the property has none yet:
+   * scrub, move, scrub, move ... follows a moving subject by hand.
+   */
+  autoKeyframe: boolean;
   /** Clip-local time of the keyframe marker selected on the timeline (all properties at that time) */
   selectedKeyframeTime: number | null;
   /** Other selected clips besides `selectedClipId` (multi-select) */
@@ -54,6 +60,7 @@ interface TimelineStoreState {
   setZoom: (zoom: number) => void;
   setSelectedClipId: (id: string | null) => void;
   setSelectedKeyframeTime: (time: number | null) => void;
+  setAutoKeyframe: (on: boolean) => void;
   /** Ctrl/Shift click: adds the clip to the selection or removes it; the clicked clip becomes the primary one */
   toggleClipSelection: (id: string) => void;
   /** Ids of all selected clips (primary + extra), in selection order, only clips that still exist */
@@ -217,6 +224,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   tracks: initialTracks,
   selectedClipId: null,
   selectedKeyframeTime: null,
+  autoKeyframe: false,
   extraSelectedIds: [],
   currentTime: 0,
   zoom: 60,
@@ -250,6 +258,10 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   setSelectedKeyframeTime: (selectedKeyframeTime) => {
     set({ selectedKeyframeTime });
+  },
+
+  setAutoKeyframe: (autoKeyframe) => {
+    set({ autoKeyframe });
   },
 
   restoreTracks: (tracks) => {
@@ -772,7 +784,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   },
 
   updateClipTransform: (clipId, transformUpdates) => {
-    const { currentTime } = get();
+    const { currentTime, autoKeyframe } = get();
     set((state) => ({
       tracks: state.tracks.map((t) => ({
         ...t,
@@ -793,7 +805,10 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           ];
 
           for (const [prop, value] of animatedEdits) {
-            if (value === undefined || !(c.keyframes?.[prop]?.length ?? 0)) continue;
+            const hasKeys = (c.keyframes?.[prop]?.length ?? 0) > 0;
+            if (value === undefined || (!hasKeys && !autoKeyframe)) continue;
+            // First keyframe of a property made later than the start: pin the old value at the start so the motion begins there
+            if (!hasKeys && localTime > 0.02) keyframes = upsertKeyframe(keyframes, prop, 0, getBaseValue(c, prop));
             keyframes = upsertKeyframe(keyframes, prop, localTime, value);
             if (prop === 'scale') {
               delete staticUpdates.scaleX;

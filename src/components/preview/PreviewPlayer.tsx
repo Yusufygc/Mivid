@@ -13,7 +13,7 @@ import {
 } from '@/core/preview/handleMath';
 import { EFFECT_KIND_LABELS, MIN_REGION_SIZE } from '@/core/effects/regionEffects';
 import { EffectKind } from '@/types/timeline';
-import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2, BoxSelect } from 'lucide-react';
+import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2, BoxSelect, Diamond, Loader2 } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 
 export const PreviewPlayer: React.FC = () => {
@@ -34,7 +34,11 @@ export const PreviewPlayer: React.FC = () => {
     updateClipTransform,
     updateClipEffect,
     addEffectClip,
+    autoKeyframe,
+    setAutoKeyframe,
   } = useTimelineStore();
+  /** Shown only when the picture is still not there after a short moment, so quick seeks do not flash a spinner */
+  const [showLoading, setShowLoading] = useState(false);
   /** Region tool: drag a rectangle on the preview to add a blur / mosaic / black box there */
   const [regionTool, setRegionTool] = useState<EffectKind | null>(null);
   const [playing, setPlaying] = useState(isPlaying);
@@ -226,6 +230,23 @@ export const PreviewPlayer: React.FC = () => {
     };
   }, []);
 
+  // Loading indicator with a small delay
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = previewEngine.subscribeLoading((loading) => {
+      if (timer) clearTimeout(timer);
+      if (loading) {
+        timer = setTimeout(() => setShowLoading(true), 250);
+      } else {
+        setShowLoading(false);
+      }
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, []);
+
   // Keep PreviewEngine context updated
   useEffect(() => {
     previewEngine.updateContext(project, tracks, assets);
@@ -303,21 +324,20 @@ export const PreviewPlayer: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-background flex flex-col items-center justify-between p-4 min-w-0 select-none">
-      {/* Canvas Viewport */}
-      <div ref={containerRef} className="flex-1 w-full flex items-center justify-center relative overflow-hidden">
-        {/* Region tool: pick a kind, then drag a rectangle on the picture */}
-        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-surface/90 backdrop-blur border border-surface-border rounded-lg p-1 text-[11px]">
+    <div className="flex-1 bg-background flex flex-col items-center p-2 lg:p-4 gap-2 min-w-0 min-h-0 select-none">
+      {/* Tools: region effects and manual keyframing, above the picture so they never cover it */}
+      <div className="w-full flex flex-wrap items-center gap-1.5 text-[11px]">
+        <div className="flex items-center gap-1 bg-surface/90 border border-surface-border rounded-lg p-1">
           <span className="flex items-center gap-1 px-1.5 text-gray-400" title="Bölge efekti çiz">
             <BoxSelect className="w-3.5 h-3.5 text-cyan-300" />
-            Bölge
+            <span className="hidden lg:inline">Bölge</span>
           </span>
           {(['blur', 'pixelate', 'blackbox'] as const).map((kind) => (
             <button
               key={kind}
               onClick={() => setRegionTool(regionTool === kind ? null : kind)}
               title={`${EFFECT_KIND_LABELS[kind]}: önizlemede bir dikdörtgen sürükle (Esc: iptal)`}
-              className={`px-2 py-1 rounded font-medium transition-all ${
+              className={`px-2 py-1 rounded font-medium transition-all whitespace-nowrap ${
                 regionTool === kind
                   ? 'bg-cyan-500 text-black'
                   : 'bg-surface-light text-gray-300 hover:text-white hover:bg-surface-border/60'
@@ -327,6 +347,23 @@ export const PreviewPlayer: React.FC = () => {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => setAutoKeyframe(!autoKeyframe)}
+          title="Oto keyframe: açıkken taşıdığın, ölçeklediğin veya döndürdüğün her şey oynatma çizgisine keyframe yazar. Hareketli bir nesneyi elle takip etmek için: çizgiyi kaydır, bölgeyi taşı, tekrarla."
+          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border font-medium transition-all whitespace-nowrap ${
+            autoKeyframe
+              ? 'bg-amber-400 text-black border-amber-300'
+              : 'bg-surface/90 text-gray-300 border-surface-border hover:text-white'
+          }`}
+        >
+          <Diamond className={`w-3.5 h-3.5 ${autoKeyframe ? 'fill-black' : 'text-amber-300'}`} />
+          <span>Oto keyframe</span>
+        </button>
+      </div>
+
+      {/* Canvas Viewport */}
+      <div ref={containerRef} className="flex-1 min-h-0 w-full flex items-center justify-center relative overflow-hidden">
         <div
           style={getAspectRatioStyle()}
           className="relative bg-black rounded-lg shadow-2xl overflow-hidden border border-surface-border flex items-center justify-center"
@@ -341,11 +378,20 @@ export const PreviewPlayer: React.FC = () => {
             onPointerCancel={handleCanvasPointerUp}
             className="w-full h-full object-contain touch-none"
           />
+          {showLoading && (
+            <div
+              role="status"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/45 text-gray-200 text-xs pointer-events-none"
+            >
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              <span>Görüntü yükleniyor…</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Playback Controls Toolbar */}
-      <div className="mt-3 w-full max-w-xl bg-surface/90 backdrop-blur border border-surface-border rounded-xl px-4 py-2 flex items-center justify-between shadow-lg">
+      <div className="w-full max-w-xl bg-surface/90 backdrop-blur border border-surface-border rounded-xl px-3 lg:px-4 py-2 flex flex-wrap items-center justify-center sm:justify-between gap-x-3 gap-y-1 shadow-lg">
         {/* Timecode */}
         <div className="flex items-center gap-1.5 font-mono text-xs text-gray-300">
           <span ref={timecodeRef} className="text-primary font-semibold">
@@ -389,7 +435,7 @@ export const PreviewPlayer: React.FC = () => {
 
         {/* Fullscreen / Resolution badge */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono bg-surface-light px-2 py-0.5 rounded text-gray-400 border border-surface-border">
+          <span className="hidden lg:inline text-[10px] font-mono bg-surface-light px-2 py-0.5 rounded text-gray-400 border border-surface-border">
             {project.fps} FPS
           </span>
           <button

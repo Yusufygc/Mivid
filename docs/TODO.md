@@ -86,7 +86,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Preview üzerinde seçili klibi (video veya metin) fareyle sürükleyerek konumlandırma: Inspector X/Y canlı güncellenir, canvas merkezine yapışır (Alt = serbest), keyframe varsa auto-key
 - [ ] Preview üzerinde köşe tutamaçlarıyla ölçekleme ve döndürme
 - [ ] Hız eğrisi (ramp), ters oynatma
-- [ ] Undo/Redo: `commandManager.execute` hiçbir store işleminde çağrılmıyor, geri alma pratikte çalışmıyor
+- [x] Undo/Redo gerçekten bağlandı (`src/core/command/timelineHistory.ts`): timeline `tracks` değişimleri otomatik kaydedilir, sürükleme/slider düzenlemeleri tek adımda birleşir, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z ve Header butonları çalışır
 
 ---
 

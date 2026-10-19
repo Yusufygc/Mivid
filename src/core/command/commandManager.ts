@@ -5,7 +5,7 @@ export class CommandManager {
   private static instance: CommandManager;
   private undoStack: ICommand[] = [];
   private redoStack: ICommand[] = [];
-  private maxHistory: number = 50;
+  private maxHistory: number = 100;
   private listeners: Set<() => void> = new Set();
 
   private constructor() {}
@@ -41,6 +41,31 @@ export class CommandManager {
     } catch (err) {
       Logger.error('CommandManager', `Failed executing: ${command.description}`, err);
     }
+  }
+
+  /**
+   * Records a command whose effect is already applied (the state changed before we heard about it).
+   * Used by the timeline history, which observes the store instead of wrapping every action.
+   */
+  public record(command: ICommand): void {
+    this.undoStack.push(command);
+    this.redoStack = [];
+
+    if (this.undoStack.length > this.maxHistory) {
+      this.undoStack.shift();
+    }
+
+    this.notify();
+  }
+
+  /** Most recent command on the undo stack, or null */
+  public peek(): ICommand | null {
+    return this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1] : null;
+  }
+
+  /** Tells listeners that the top command was modified in place (coalesced edits) */
+  public touch(): void {
+    this.notify();
   }
 
   public undo(): boolean {

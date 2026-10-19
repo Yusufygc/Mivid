@@ -53,6 +53,8 @@ interface TimelineStoreState {
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
   addTransition: (clipId: string, position: 'in' | 'out', transitionType: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe') => void;
   removeTransition: (clipId: string, position: 'in' | 'out') => void;
+  /** Replaces all tracks (undo/redo). Keeps the project duration and selection consistent. */
+  restoreTracks: (tracks: Track[]) => void;
 }
 
 const syncProjectDuration = (tracks: Track[]) => {
@@ -151,6 +153,16 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   setSelectedClipId: (selectedClipId) => {
     set({ selectedClipId });
+  },
+
+  restoreTracks: (tracks) => {
+    syncProjectDuration(tracks);
+    set((state) => ({
+      tracks,
+      selectedClipId: tracks.some((t) => t.clips.some((c) => c.id === state.selectedClipId))
+        ? state.selectedClipId
+        : null,
+    }));
   },
 
   toggleSnapping: () => {

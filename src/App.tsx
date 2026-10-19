@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { initTimelineHistory } from '@/core/command/timelineHistory';
 import { Header } from '@/components/header/Header';
 import { MediaPool } from '@/components/media-pool/MediaPool';
 import { PreviewPlayer } from '@/components/preview/PreviewPlayer';
@@ -8,6 +9,9 @@ import { ExportModal } from '@/components/export/ExportModal';
 
 export function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
+
+  // Undo/redo history for timeline edits + Ctrl+Z / Ctrl+Y
+  useEffect(() => initTimelineHistory(), []);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-background overflow-hidden">

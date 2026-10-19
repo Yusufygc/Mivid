@@ -11,7 +11,9 @@ import {
   EffectKind,
   EffectSettings,
   FitMode,
+  ChromaKey,
 } from '@/types/timeline';
+import { DEFAULT_CHROMA_KEY, clampChroma } from '@/core/chroma/chromaKey';
 import { DEFAULT_EFFECT_SECONDS, EFFECT_KIND_LABELS, clampEffect, defaultEffect } from '@/core/effects/regionEffects';
 import { NEUTRAL_GRADING, clampGrading, isNeutralGrading } from '@/core/color/colorGrading';
 import { MediaAsset } from '@/types/asset';
@@ -22,6 +24,7 @@ import {
   findKeyframeAt,
   KEYFRAME_EPSILON,
   moveKeyframesAtTime,
+  resolveTransform,
   removeKeyframesAtTime,
   removeKeyframe as removeKeyframeFrom,
   scaleKeyframeTimes,
@@ -55,6 +58,16 @@ interface TimelineStoreState {
   toggleClipSelection: (id: string) => void;
   /** Ids of all selected clips (primary + extra), in selection order, only clips that still exist */
   getSelectedClipIds: () => string[];
+  /**
+   * Moves clips together along the timeline by `delta` seconds, keeping their distances.
+   * The move is clamped at 0 and rejected (returns false) when a moved clip would hit one that stays or sits on a locked track.
+   */
+  moveClipsBy: (ids: string[], delta: number) => boolean;
+  /**
+   * Freezes the frame under the playhead of the selected video clip: the clip is split there and a still of that
+   * frame is inserted for `seconds`; everything after it on the track moves later. Returns false when it is not possible.
+   */
+  insertFreezeFrame: (seconds?: number) => boolean;
   /** Deletes the selected clips. With `ripple`, later clips on the same track move left to close the gap. */
   removeSelectedClips: (ripple?: boolean) => number;
   /** Copies the selected clips to the clipboard; returns how many were copied */
@@ -100,6 +113,8 @@ interface TimelineStoreState {
   ) => Clip | null;
   updateClipEffect: (clipId: string, effect: Partial<EffectSettings>) => void;
   updateClipFit: (clipId: string, fit: FitMode) => void;
+  /** Turns the green screen on (defaults) / edits it; `null` removes it */
+  updateClipChroma: (clipId: string, key: Partial<ChromaKey> | null) => void;
   /** 0 turns the blurred backdrop off */
   updateClipBackdrop: (clipId: string, strength: number) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
@@ -261,6 +276,115 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
     }));
   },
 
+  insertFreezeFrame: (seconds = 2) => {
+    const { tracks, selectedClipId, currentTime } = get();
+    const track = tracks.find((t) => t.clips.some((c) => c.id === selectedClipId));
+    const clip = track?.clips.find((c) => c.id === selectedClipId);
+    if (!track || !clip || clip.type !== 'video' || clip.freeze) return false;
+
+    const end = clip.startTime + clip.duration;
+    if (currentTime < clip.startTime - 1e-6 || currentTime > end + 1e-6) return false;
+
+    const duration = clampTime(Math.max(0.1, seconds));
+    const local = currentTime - clip.startTime;
+    const atStart = local < 0.02;
+    const atEnd = currentTime > end - 0.02;
+    const at = atEnd ? end : atStart ? clip.startTime : currentTime;
+
+    // The frame to hold: the source frame at the playhead (the last visible frame at the very end)
+    const sourceTime = clampTime(
+      atEnd ? Math.max(clip.inPoint, clip.outPoint - 0.05) : clip.inPoint + local * clip.speed
+    );
+
+    let before: Clip | null = clip;
+    let after: Clip | null = null;
+    if (!atStart && !atEnd) {
+      const split = TimelineEngine.splitClip(clip, currentTime);
+      if (!split) return false;
+      before = split.leftClip;
+      after = split.rightClip;
+    } else if (atStart) {
+      before = null;
+      after = clip;
+    }
+
+    const freezeId = crypto.randomUUID ? crypto.randomUUID() : `freeze-${Date.now()}`;
+    const frozen: Clip = {
+      ...clip,
+      id: freezeId,
+      name: `${clip.name} (donmuş kare)`,
+      startTime: at,
+      duration,
+      inPoint: sourceTime,
+      outPoint: sourceTime,
+      speed: 1,
+      freeze: true,
+      transform: resolveTransform(clip, Math.min(clip.duration, Math.max(0, local))),
+      keyframes: undefined,
+      transitionIn: undefined,
+      transitionOut: undefined,
+      audio: { ...clip.audio, muted: true, fadeIn: 0, fadeOut: 0 },
+    };
+
+    const newTracks = tracks.map((t) => {
+      if (t.id !== track.id) return t;
+      const others = t.clips
+        .filter((c) => c.id !== clip.id)
+        // everything that started at or after the cut moves later by the length of the freeze
+        .map((c) => (c.startTime >= at - 1e-6 ? { ...c, startTime: clampTime(c.startTime + duration) } : c));
+      const shiftedAfter = after ? { ...after, startTime: clampTime(after.startTime + duration) } : null;
+      return {
+        ...t,
+        clips: [...others, ...(before ? [before] : []), frozen, ...(shiftedAfter ? [shiftedAfter] : [])].sort(
+          (a, b) => a.startTime - b.startTime
+        ),
+      };
+    });
+
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks, selectedClipId: freezeId, extraSelectedIds: [], selectedKeyframeTime: null });
+    Logger.info('useTimelineStore', `Freeze frame inserted at ${at.toFixed(2)}s for ${duration}s`);
+    return true;
+  },
+
+  moveClipsBy: (ids, delta) => {
+    const idSet = new Set(ids);
+    const { tracks } = get();
+    const moving = tracks.flatMap((t) => t.clips).filter((c) => idSet.has(c.id));
+    if (moving.length === 0 || Math.abs(delta) < 1e-6) return false;
+
+    // Never move before the start of the timeline
+    const earliest = Math.min(...moving.map((c) => c.startTime));
+    const safeDelta = Math.max(delta, -earliest);
+    if (Math.abs(safeDelta) < 1e-6) return false;
+
+    for (const track of tracks) {
+      const mine = track.clips.filter((c) => idSet.has(c.id));
+      if (mine.length === 0) continue;
+      if (track.isLocked) return false;
+
+      const others = track.clips.filter((c) => !idSet.has(c.id));
+      for (const clip of mine) {
+        const moved = { ...clip, startTime: clip.startTime + safeDelta };
+        if (others.some((other) => TimelineEngine.doesClipOverlap(moved, other))) return false;
+      }
+    }
+
+    const newTracks = tracks.map((track) =>
+      track.clips.some((c) => idSet.has(c.id))
+        ? {
+            ...track,
+            clips: track.clips
+              .map((c) => (idSet.has(c.id) ? { ...c, startTime: clampTime(c.startTime + safeDelta, 0) } : c))
+              .sort((a, b) => a.startTime - b.startTime),
+          }
+        : track
+    );
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks });
+    return true;
+  },
+
   removeSelectedClips: (ripple = false) => {
     const ids = new Set(selectedIdsOf(get()));
     if (ids.size === 0) return 0;
@@ -400,7 +524,8 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   addClipFromAsset: (asset, _targetTrackId, requestedStartTime) => {
     const { tracks, currentTime } = get();
-    const duration = asset.duration || 5.0;
+    // Stills have no length of their own: five seconds is a sensible default
+    const duration = asset.type === 'image' ? 5.0 : asset.duration || 5.0;
     const startTime = requestedStartTime !== undefined ? requestedStartTime : currentTime;
 
     const trackType = asset.type === 'audio' ? 'audio' : 'video';
@@ -690,7 +815,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
     const newTracks = tracks.map((t) => {
       const clip = t.clips.find((c) => c.id === clipId);
-      if (!clip || (clip.type !== 'video' && clip.type !== 'audio')) return t;
+      if (!clip || (clip.type !== 'video' && clip.type !== 'audio') || clip.freeze) return t;
       if (Math.abs(clip.speed - newSpeed) < 0.001) return t;
 
       // Source range stays the same; the timeline length follows the new speed.
@@ -905,6 +1030,19 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           // The clip label follows the effect kind until the user renames it (labels are the default names)
           const wasDefaultName = c.name === EFFECT_KIND_LABELS[c.effect.kind];
           return { ...c, effect: next, name: wasDefaultName ? EFFECT_KIND_LABELS[next.kind] : c.name };
+        }),
+      })),
+    }));
+  },
+
+  updateClipChroma: (clipId, keyUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId || (c.type !== 'video' && c.type !== 'image')) return c;
+          if (keyUpdates === null) return { ...c, chromaKey: undefined };
+          return { ...c, chromaKey: clampChroma({ ...DEFAULT_CHROMA_KEY, ...c.chromaKey, ...keyUpdates }) };
         }),
       })),
     }));

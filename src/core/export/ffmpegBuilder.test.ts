@@ -412,6 +412,83 @@ describe('FFmpegCommandBuilder', () => {
     });
   });
 
+  describe('silent footage', () => {
+    it('does not ask a file without an audio stream for audio', () => {
+      const silent = new Map<string, MediaAsset>([['asset-1', { ...mockAsset, hasAudio: false }]]);
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, buildVideoTrack({}), silent, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).not.toContain('atrim');
+      expect(filterComplex).not.toContain('amix');
+    });
+
+    it('still uses the audio when it is present or unknown', () => {
+      for (const hasAudio of [true, undefined]) {
+        const assets = new Map<string, MediaAsset>([['asset-1', { ...mockAsset, hasAudio }]]);
+        const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, buildVideoTrack({}), assets, {
+          outputPath: 'out.mp4',
+        });
+        expect(filterComplex).toContain('atrim');
+      }
+    });
+  });
+
+  describe('layer stacking', () => {
+    const twoTrackProject = (lowZOnOverlay: boolean): Track[] => {
+      const clip = (id: string, trackId: string, zIndex: number): Clip => ({
+        id,
+        trackId,
+        assetId: 'asset-1',
+        name: id,
+        type: 'video',
+        startTime: 0,
+        duration: 3,
+        inPoint: 0,
+        outPoint: 3,
+        speed: 1,
+        // the overlay clip sits at x=111 so its overlay filter can be told apart in the graph
+        transform: { x: trackId === 'overlay' ? 111 : 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex },
+        audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      });
+      const track = (id: string, type: Track['type'], clips: Clip[]): Track => ({
+        id,
+        name: id,
+        type,
+        isMuted: false,
+        isLocked: false,
+        isHidden: false,
+        clips,
+      });
+      // The overlay track comes first in the array; the video track second
+      return [
+        track('overlay', 'overlay', [clip('top', 'overlay', lowZOnOverlay ? 1 : 3)]),
+        track('video', 'video', [clip('main', 'video', 2)]),
+      ];
+    };
+
+    const overlayOrder = (lowZOnOverlay: boolean): { overlay: number; main: number } => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        twoTrackProject(lowZOnOverlay),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      return { overlay: filterComplex.indexOf('overlay=x=111'), main: filterComplex.indexOf('overlay=x=0') };
+    };
+
+    it('draws a clip with a higher z-index later, even when its track comes first, like the preview', () => {
+      const { overlay, main } = overlayOrder(false); // overlay z=3, video z=2
+      expect(overlay).toBeGreaterThan(-1);
+      expect(main).toBeGreaterThan(-1);
+      expect(overlay).toBeGreaterThan(main);
+    });
+
+    it('draws a lower z-index first', () => {
+      const { overlay, main } = overlayOrder(true); // overlay z=1, video z=2
+      expect(overlay).toBeLessThan(main);
+    });
+  });
+
   describe('images', () => {
     it('does not ask an image for an audio stream', () => {
       const imageAsset: MediaAsset = { ...mockAsset, id: 'img', path: 'C:/media/pic.png', type: 'image' };
@@ -424,6 +501,75 @@ describe('FFmpegCommandBuilder', () => {
       );
       expect(filterComplex).not.toContain('atrim');
       expect(filterComplex).not.toContain('amix');
+    });
+
+    it('loops a still at the project frame rate for the whole export', () => {
+      const imageAsset: MediaAsset = { ...mockAsset, id: 'img', path: 'C:/media/pic.png', type: 'image' };
+      const { args, filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildVideoTrack({ assetId: 'img', type: 'image' }),
+        new Map([['img', imageAsset]]),
+        { outputPath: 'out.mp4' }
+      );
+      const at = args.indexOf('-loop');
+      expect(args.slice(at, at + 7)).toEqual(['-loop', '1', '-framerate', '30', '-t', '7.00', '-i']);
+      expect(args[at + 7]).toBe('C:/media/pic.png');
+      // the still goes through the same layer pipeline as video (alpha stays for stickers)
+      expect(filterComplex).toContain('format=yuva420p');
+    });
+
+    it('does not loop video inputs', () => {
+      const { args } = FFmpegCommandBuilder.buildExportCommand(mockProject, buildVideoTrack({}), mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(args).not.toContain('-loop');
+    });
+  });
+
+  describe('chroma key', () => {
+    it('keys the footage right after the source and before the color adjustment', () => {
+      const tracks = buildVideoTrack({
+        chromaKey: { color: '#00ff00', similarity: 0.3, blend: 0.1 },
+        colorGrading: { brightness: 0, contrast: 1.2, saturation: 1 },
+      });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain(
+        'format=yuva420p,chromakey=color=0x00ff00:similarity=0.300:blend=0.100,eq=brightness=0.000:contrast=1.200'
+      );
+    });
+
+    it('adds nothing without a key', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildVideoTrack({}),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).not.toContain('chromakey');
+    });
+  });
+
+  describe('freeze frame', () => {
+    it('repeats one source frame for the clip length and keeps it on the timeline', () => {
+      const tracks = buildVideoTrack({ freeze: true, inPoint: 3, outPoint: 3, startTime: 2, duration: 4 });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain(
+        "trim=start=3.00:end=3.50,setpts=PTS-STARTPTS,select='eq(n,0)',loop=loop=-1:size=1:start=0,setpts=N/(30*TB),trim=duration=4.000,setpts=PTS+2.00/TB,format=yuva420p"
+      );
+    });
+
+    it('adds no audio for a frozen clip', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildVideoTrack({ freeze: true, inPoint: 3, outPoint: 3 }),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).not.toContain('atrim');
     });
   });
 

@@ -162,3 +162,27 @@ describe('TimelineEngine', () => {
     expect(noSnapResult.snappedTime).toBe(6.5);
   });
 });
+
+describe('TimelineEngine.getActiveClipsAtTime stacking', () => {
+  const lane = (id: string, clipId: string): Track => ({
+    id,
+    name: id,
+    type: 'video',
+    isMuted: false,
+    isLocked: false,
+    isHidden: false,
+    clips: [createMockClip(clipId, 0, 5)],
+  });
+
+  it('draws clips of upper lanes after (above) clips of lower lanes when the z-index is equal', () => {
+    // tracks are listed top lane first
+    const active = TimelineEngine.getActiveClipsAtTime([lane('top', 'upper'), lane('bottom', 'lower')], 1);
+    expect(active.map((c) => c.id)).toEqual(['lower', 'upper']);
+  });
+
+  it('lets a higher z-index win over the lane order', () => {
+    const tracks = [lane('top', 'upper'), lane('bottom', 'lower')];
+    tracks[1].clips[0] = { ...tracks[1].clips[0], transform: { ...tracks[1].clips[0].transform, zIndex: 9 } };
+    expect(TimelineEngine.getActiveClipsAtTime(tracks, 1).map((c) => c.id)).toEqual(['upper', 'lower']);
+  });
+});

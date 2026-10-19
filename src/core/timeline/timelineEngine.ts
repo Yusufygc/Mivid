@@ -238,7 +238,9 @@ export class TimelineEngine {
    */
   public static getActiveClipsAtTime(tracks: Track[], time: number): Clip[] {
     const active: Clip[] = [];
-    for (const track of tracks) {
+    // Lanes higher up on the timeline are drawn on top: walk from the bottom lane to the top one,
+    // so with equal z-index the upper lane ends up later (above) in the list
+    for (const track of [...tracks].reverse()) {
       if (track.isHidden) continue;
       for (const clip of track.clips) {
         if (time >= clip.startTime && time < clip.startTime + clip.duration) {

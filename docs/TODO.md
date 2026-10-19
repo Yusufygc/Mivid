@@ -115,7 +115,18 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Bulanık arka plan dolgusu (dikey proje + yatay video gibi durumlar için), preview ve export
 - [x] Export'ta resim klipleri için ses akışı istemeyi bıraktı
 - [ ] Yüz/nesne takibi, efekt gücü keyframe'i, döndürülmüş bölge, ters mod (bölge hariç bulanıklaştır)
-- [ ] Resim klipleri (preview'da çizim, export'ta `-loop 1`)
+- [x] Resim / sticker klipleri: preview'da çizilir (şeffaf PNG dahil), export `-loop 1`, sığdırma, ölçek, döndürme, keyframe, renk ayarı çalışır; klibin varsayılan süresi 5 sn
+
+---
+
+## 🧩 Faz 8: Kompozisyon Araçları
+- [x] Chroma key (yeşil perde): renk, benzerlik, kenar yumuşatma, damlalık (EyeDropper) ve yeşil/mavi hazır renkler. Preview yazılımla anahtarlar, export FFmpeg `chromakey`; formül FFmpeg ile aynı, gerçek ffmpeg çıktısıyla karşılaştırıldı (`src/core/chroma/`)
+- [x] Dondurma karesi ("Dondur" düğmesi): playhead'deki kare, klibi böler ve araya 2 sn'lik bir kare klibi ekler, sonrası kayar. Preview'da video duraklı, export'ta `select` + `loop`
+- [x] Çoklu seçilen kliplerin birlikte sürüklenmesi (çarpışma ve kilitli kanal korumalı, 0'ın altına inmez); sürükleme sonrası seçim korunur
+- [x] Sessiz medya: ses akışı olmayan dosyalar export'ta ses istemiyor. Masaüstünde export öncesi `ffmpeg -i` çıktısından anlaşılır (`core/media/probe.ts`, yeni Rust komutu gerekmez)
+- [x] Kanal üstünlüğü düzeltildi: timeline'da üstteki kanal artık önizlemede ve export'ta üstte çiziliyor (eskiden ters). Export artık `zIndex`'i de preview gibi dikkate alıyor
+- [ ] Karışım modları (multiply, screen, overlay): preview'da kolay, FFmpeg `blend` filtresi şeffaf katmanı ve alfa'yı doğru karıştırmadığı için preview ile export eşleşmiyor; ayrı tasarım gerekir
+- [ ] Çoklu seçimde birlikte kırpma
 
 ---
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useTimelineStore } from '@/stores/useTimelineStore';
 import { useAssetStore } from '@/stores/useAssetStore';
+import { probeUsedAssets } from '@/core/media/probe';
 import { FFmpegCommandBuilder } from '@/core/export/ffmpegBuilder';
 import { Logger } from '@/core/logger';
 import { X, Download, Terminal, CheckCircle2, AlertTriangle, Copy, Check, Info, FolderOpen } from 'lucide-react';
@@ -92,7 +93,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       setErrorMessage(null);
       setStatusMessage('FFmpeg Render İşlemi Başlatılıyor...');
 
-      const result = FFmpegCommandBuilder.buildExportCommand(project, tracks, assets, {
+      // Files without an audio stream must not be asked for one: find out which before building the command
+      if (isTauriEnv) await probeUsedAssets(tracks);
+      const result = FFmpegCommandBuilder.buildExportCommand(project, tracks, useAssetStore.getState().assets, {
         outputPath,
         preset,
       });

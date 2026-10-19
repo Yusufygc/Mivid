@@ -429,3 +429,150 @@ describe('useTimelineStore - region effects and fit', () => {
     expect(audio.fit).toBeUndefined();
   });
 });
+
+describe('useTimelineStore - chroma key', () => {
+  beforeEach(() => setTracks([makeClip('a', 0, 4), { ...makeClip('t', 0, 2), type: 'text' }]));
+
+  it('turns the key on with the green defaults and edits it', () => {
+    useTimelineStore.getState().updateClipChroma('a', {});
+    expect(getClip('a')!.chromaKey).toEqual({ color: '#00ff00', similarity: 0.3, blend: 0.1 });
+
+    useTimelineStore.getState().updateClipChroma('a', { color: '#0000FF', similarity: 5 });
+    expect(getClip('a')!.chromaKey).toEqual({ color: '#0000ff', similarity: 1, blend: 0.1 });
+  });
+
+  it('removes the key with null and ignores text clips', () => {
+    useTimelineStore.getState().updateClipChroma('a', {});
+    useTimelineStore.getState().updateClipChroma('a', null);
+    expect(getClip('a')!.chromaKey).toBeUndefined();
+
+    useTimelineStore.getState().updateClipChroma('t', {});
+    expect(getClip('t')!.chromaKey).toBeUndefined();
+  });
+});
+
+describe('useTimelineStore - group move', () => {
+  const clips = (): Clip[] => useTimelineStore.getState().tracks.flatMap((t) => t.clips);
+
+  beforeEach(() => setTracks([makeClip('a', 1, 2), makeClip('b', 4, 2), makeClip('c', 10, 2)]));
+
+  it('moves the given clips together and keeps their distance', () => {
+    expect(useTimelineStore.getState().moveClipsBy(['a', 'b'], 2)).toBe(true);
+    expect(getClip('a')!.startTime).toBe(3);
+    expect(getClip('b')!.startTime).toBe(6);
+    expect(getClip('c')!.startTime).toBe(10);
+  });
+
+  it('stops at the start of the timeline instead of pushing a clip below zero', () => {
+    useTimelineStore.getState().moveClipsBy(['a', 'b'], -5);
+    expect(getClip('a')!.startTime).toBe(0);
+    expect(getClip('b')!.startTime).toBe(3); // same distance as before (3s)
+  });
+
+  it('is rejected when a moved clip would run into one that stays', () => {
+    expect(useTimelineStore.getState().moveClipsBy(['a', 'b'], 5)).toBe(false); // b would hit c at 10
+    expect(getClip('a')!.startTime).toBe(1);
+    expect(getClip('b')!.startTime).toBe(4);
+  });
+
+  it('is rejected for clips on a locked track and for a zero move', () => {
+    useTimelineStore.setState((state) => ({ tracks: state.tracks.map((t) => ({ ...t, isLocked: true })) }));
+    expect(useTimelineStore.getState().moveClipsBy(['a'], 1)).toBe(false);
+    useTimelineStore.setState((state) => ({ tracks: state.tracks.map((t) => ({ ...t, isLocked: false })) }));
+    expect(useTimelineStore.getState().moveClipsBy(['a'], 0)).toBe(false);
+    expect(clips()).toHaveLength(3);
+  });
+
+  it('keeps the project duration in sync', () => {
+    useTimelineStore.getState().moveClipsBy(['c'], 20);
+    expect(useProjectStore.getState().project.duration).toBe(32);
+  });
+});
+
+describe('useTimelineStore - freeze frame', () => {
+  const clips = (): Clip[] =>
+    useTimelineStore
+      .getState()
+      .tracks.flatMap((t) => t.clips)
+      .sort((a, b) => a.startTime - b.startTime);
+
+  beforeEach(() => {
+    setTracks([makeClip('a', 0, 10), makeClip('b', 12, 3)]);
+    useTimelineStore.setState({ selectedClipId: 'a', currentTime: 4 });
+  });
+
+  it('splits the clip at the playhead and inserts a held frame, pushing later clips', () => {
+    expect(useTimelineStore.getState().insertFreezeFrame(2)).toBe(true);
+
+    const [left, frozen, right, later] = clips();
+    expect(left).toMatchObject({ startTime: 0, duration: 4, outPoint: 4 });
+    expect(frozen).toMatchObject({ freeze: true, startTime: 4, duration: 2, inPoint: 4, speed: 1 });
+    expect(frozen.audio.muted).toBe(true);
+    expect(right).toMatchObject({ startTime: 6, duration: 6, inPoint: 4 });
+    expect(later).toMatchObject({ id: 'b', startTime: 14 }); // 12 + 2
+    expect(useTimelineStore.getState().selectedClipId).toBe(frozen.id);
+  });
+
+  it('holds the right source frame of a sped-up clip', () => {
+    setTracks([makeClip('a', 0, 5, { speed: 2, outPoint: 10 })]);
+    useTimelineStore.setState({ selectedClipId: 'a', currentTime: 2 });
+    useTimelineStore.getState().insertFreezeFrame(1);
+    const frozen = clips().find((c) => c.freeze)!;
+    expect(frozen.inPoint).toBe(4); // 2s on the timeline at 2x = 4s of source
+  });
+
+  it('bakes the animated transform at that moment into the held frame', () => {
+    setTracks([
+      makeClip('a', 0, 10, {
+        keyframes: { x: [{ id: 'k1', time: 0, value: 0, easing: 'linear' }, { id: 'k2', time: 10, value: 100, easing: 'linear' }] },
+      }),
+    ]);
+    useTimelineStore.setState({ selectedClipId: 'a', currentTime: 5 });
+    useTimelineStore.getState().insertFreezeFrame(2);
+    const frozen = clips().find((c) => c.freeze)!;
+    expect(frozen.transform.x).toBeCloseTo(50);
+    expect(frozen.keyframes).toBeUndefined();
+  });
+
+  it('inserts before the clip when the playhead is on its first frame', () => {
+    useTimelineStore.setState({ currentTime: 0 });
+    useTimelineStore.getState().insertFreezeFrame(2);
+    const [frozen, original] = clips();
+    expect(frozen).toMatchObject({ freeze: true, startTime: 0, duration: 2, inPoint: 0 });
+    expect(original).toMatchObject({ id: 'a', startTime: 2, duration: 10 });
+  });
+
+  it('holds the last frame when the playhead is at the end of the clip', () => {
+    useTimelineStore.setState({ currentTime: 10 });
+    useTimelineStore.getState().insertFreezeFrame(2);
+    const [original, frozen] = clips();
+    expect(original).toMatchObject({ id: 'a', duration: 10 });
+    expect(frozen).toMatchObject({ freeze: true, startTime: 10, duration: 2 });
+    expect(frozen.inPoint).toBeCloseTo(9.95);
+  });
+
+  it('refuses audio, text, frozen and out-of-range cases', () => {
+    useTimelineStore.setState({ currentTime: 40 });
+    expect(useTimelineStore.getState().insertFreezeFrame()).toBe(false); // playhead outside the clip
+
+    useTimelineStore.setState({ currentTime: 4, selectedClipId: null });
+    expect(useTimelineStore.getState().insertFreezeFrame()).toBe(false);
+
+    setTracks([makeClip('m', 0, 5, { type: 'audio' })]);
+    useTimelineStore.setState({ selectedClipId: 'm', currentTime: 2 });
+    expect(useTimelineStore.getState().insertFreezeFrame()).toBe(false);
+
+    setTracks([makeClip('a', 0, 10)]);
+    useTimelineStore.setState({ selectedClipId: 'a', currentTime: 4 });
+    useTimelineStore.getState().insertFreezeFrame();
+    // the new frozen clip is selected now, freezing it again is not allowed
+    expect(useTimelineStore.getState().insertFreezeFrame()).toBe(false);
+  });
+
+  it('ignores speed changes on a frozen clip', () => {
+    useTimelineStore.getState().insertFreezeFrame(2);
+    const frozen = clips().find((c) => c.freeze)!;
+    useTimelineStore.getState().setClipSpeed(frozen.id, 2);
+    expect(clips().find((c) => c.id === frozen.id)).toMatchObject({ speed: 1, duration: 2 });
+  });
+});

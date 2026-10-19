@@ -99,6 +99,13 @@ export interface EffectSettings {
 /** How footage fills the project frame: stretched (old behavior), fitted inside (letterbox) or covering it (crop) */
 export type FitMode = 'stretch' | 'contain' | 'cover';
 
+/** Green screen: pixels close to `color` become transparent. similarity 0.01..1, blend 0..1 */
+export interface ChromaKey {
+  color: string; // #rrggbb
+  similarity: number;
+  blend: number;
+}
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -119,6 +126,8 @@ export interface Clip {
   keyframes?: ClipKeyframes; // Each list sorted by time
   effect?: EffectSettings; // Only on clips of type 'effect'
   fit?: FitMode; // Video / image clips. Undefined = stretch, so old projects look the same
+  chromaKey?: ChromaKey; // Video / image clips
+  freeze?: boolean; // A still of the source frame at `inPoint`, held for the whole clip
   backdropBlur?: number; // 0..1: a blurred, cover-fitted copy of the footage fills the frame behind the clip
 }
 

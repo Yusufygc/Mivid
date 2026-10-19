@@ -2,6 +2,7 @@ import { Clip, Keyframe, Track } from '@/types/timeline';
 import { hasKeyframes } from '@/core/animation/keyframes';
 import { buildFadeFilters } from '@/core/audio/fades';
 import { ffmpegEqFilter } from '@/core/color/colorGrading';
+import { ffmpegChromakeyFilter } from '@/core/chroma/chromaKey';
 import { backdropSigmaPx, blurSigmaPx, featherSigmaPx, pixelBlockPx } from '@/core/effects/regionEffects';
 import { ffmpegFitFilter } from '@/core/layout/fit';
 import { MediaAsset } from '@/types/asset';
@@ -196,6 +197,9 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
     underBase = backdropOut;
     clipFilters = `[${sourceTag}]null`;
   }
+
+  // Green screen first, so the color adjustment and everything after it only sees the kept pixels
+  if (clip.type !== 'text' && clip.chromaKey) clipFilters += `,${ffmpegChromakeyFilter(clip.chromaKey)}`;
 
   // Color adjustment (video and image clips; text has no footage to grade)
   const eqFilter = clip.type === 'text' ? '' : ffmpegEqFilter(clip.colorGrading);
@@ -475,6 +479,10 @@ export class FFmpegCommandBuilder {
           const asset = assets.get(clip.assetId);
           if (asset && asset.path) {
             assetIndexMap.set(clip.assetId, currentInputIndex);
+            if (asset.type === 'image') {
+              // A still becomes a video stream: loop it at the project frame rate for the whole export
+              inputs.push('-loop', '1', '-framerate', String(project.fps), '-t', exportDuration.toFixed(2));
+            }
             inputs.push('-i', asset.path);
             currentInputIndex++;
           }
@@ -498,8 +506,16 @@ export class FFmpegCommandBuilder {
     // 4. Video & Overlay Tracks
     const videoTracks = tracks.filter((t) => (t.type === 'video' || t.type === 'overlay') && !t.isHidden);
 
-    for (const track of videoTracks) {
-      for (const clip of track.clips) {
+    // Same stacking as the preview: a lower z-index is drawn first; with equal z-index the lower lane is drawn
+    // before the lane above it (upper lanes cover lower ones), then clip order
+    const layers = [...videoTracks]
+      .reverse()
+      .flatMap((track) => track.clips)
+      .map((clip, order) => ({ clip, order }))
+      .sort((a, b) => (a.clip.transform?.zIndex ?? 0) - (b.clip.transform?.zIndex ?? 0) || a.order - b.order);
+
+    {
+      for (const { clip } of layers) {
         const inputIdx = assetIndexMap.get(clip.assetId);
         if (inputIdx === undefined) continue;
 
@@ -509,7 +525,14 @@ export class FFmpegCommandBuilder {
         const sourceSpan = clip.duration * speed;
         const ptsExpr = Math.abs(speed - 1) > 0.001 ? `(PTS-STARTPTS)/${formatNumber(speed)}` : 'PTS-STARTPTS';
         // yuva420p adds the alpha channel needed for opacity and transitions
-        const source = `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${sourceSpan.toFixed(2)},setpts=${ptsExpr}+${clip.startTime.toFixed(2)}/TB,format=yuva420p`;
+        let source = `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:duration=${sourceSpan.toFixed(2)},setpts=${ptsExpr}+${clip.startTime.toFixed(2)}/TB,format=yuva420p`;
+        if (clip.freeze) {
+          // One frame of the source, repeated for the clip's length, then moved to its place on the timeline
+          source =
+            `[${inputIdx}:v]trim=start=${clip.inPoint.toFixed(2)}:end=${(clip.inPoint + 0.5).toFixed(2)},setpts=PTS-STARTPTS,select='eq(n,0)',` +
+            `loop=loop=-1:size=1:start=0,setpts=N/(${project.fps}*TB),trim=duration=${clip.duration.toFixed(3)},` +
+            `setpts=PTS+${clip.startTime.toFixed(2)}/TB,format=yuva420p`;
+        }
 
         currentVideoBase = pushVisualLayer({
           project,
@@ -591,7 +614,8 @@ export class FFmpegCommandBuilder {
     for (const track of tracks) {
       if (track.isMuted || track.type === 'text' || track.type === 'effect') continue;
       for (const clip of track.clips) {
-        if (clip.type === 'text' || clip.type === 'effect' || clip.type === 'image') continue; // no audio stream
+        if (clip.type === 'text' || clip.type === 'effect' || clip.type === 'image' || clip.freeze) continue; // no audio stream
+        if (assets.get(clip.assetId)?.hasAudio === false) continue; // the file has no audio stream (silent footage)
         const inputIdx = assetIndexMap.get(clip.assetId);
         if (inputIdx === undefined) continue;
 

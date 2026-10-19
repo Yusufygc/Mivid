@@ -92,6 +92,21 @@ export const ClipVisuals: React.FC<ClipVisualsProps> = ({ clip, asset, zoom }) =
     );
   }
 
+  if (clip.type === 'image' && asset?.url) {
+    // A still repeats along the clip, one copy per clip height
+    return (
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none opacity-50 z-0"
+        style={{
+          backgroundImage: `url(${asset.url})`,
+          backgroundSize: 'auto 100%',
+          backgroundRepeat: 'repeat-x',
+        }}
+      />
+    );
+  }
+
   if (wantsWaveform && waveform) {
     return <canvas ref={canvasRef} aria-hidden className="absolute inset-0 w-full h-full pointer-events-none z-0" />;
   }

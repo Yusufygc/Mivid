@@ -9,6 +9,7 @@ import { canvasFilter } from '@/core/color/colorGrading';
 import { backdropSigmaPx } from '@/core/effects/regionEffects';
 import { clipToFrame, fitRect } from '@/core/layout/fit';
 import { RegionEffectRenderer } from './effectRenderer';
+import { ChromaKeyRenderer } from './chromaRenderer';
 
 export type TimeUpdateListener = (time: number) => void;
 
@@ -28,6 +29,7 @@ export class PreviewEngine {
   private ctx: CanvasRenderingContext2D | null = null;
   private videoPool: Map<string, HTMLVideoElement> = new Map();
   private audioPool: Map<string, HTMLAudioElement> = new Map();
+  private imagePool: Map<string, HTMLImageElement> = new Map();
   private mediaContainer: HTMLDivElement | null = null;
 
   private isPlaying: boolean = false;
@@ -40,6 +42,7 @@ export class PreviewEngine {
   private selectedClipId: string | null = null;
   private guides = { x: false, y: false };
   private effectRenderer = new RegionEffectRenderer();
+  private chromaRenderer = new ChromaKeyRenderer();
   /** Rectangle being drawn with the region tool, in project pixels */
   private draftRegion: { x: number; y: number; width: number; height: number } | null = null;
 
@@ -102,6 +105,12 @@ export class PreviewEngine {
     this.currentAssets = assets;
   }
 
+  /** Source time shown for a clip at the playhead; a freeze frame always shows its one frame */
+  private sourceTime(clip: Clip): number {
+    if (clip.freeze) return Math.max(0, clip.inPoint);
+    return Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
+  }
+
   /** Clip outlined on the canvas while it is active at the playhead */
   public setSelectedClipId(id: string | null): void {
     this.selectedClipId = id;
@@ -128,10 +137,9 @@ export class PreviewEngine {
 
     if (clip.type === 'video' || clip.type === 'image') {
       // Footage that is fitted or covers the frame occupies only part of it; use the real picture size when known
-      const asset = this.currentAssets.get(clip.assetId);
-      const video = asset ? this.videoPool.get(asset.id) : undefined;
-      if (clip.fit && clip.fit !== 'stretch' && video && video.videoWidth > 0) {
-        const r = clipToFrame(fitRect(clip.fit, video.videoWidth, video.videoHeight, width, height), width, height);
+      const source = this.getSourceSize(clip);
+      if (clip.fit && clip.fit !== 'stretch' && source) {
+        const r = clipToFrame(fitRect(clip.fit, source.w, source.h, width, height), width, height);
         return { x0: r.x - width / 2, y0: r.y - height / 2, x1: r.x + r.w - width / 2, y1: r.y + r.h - height / 2 };
       }
       return { x0: -width / 2, y0: -height / 2, x1: width / 2, y1: height / 2 };
@@ -371,6 +379,29 @@ export class PreviewEngine {
     }
   }
 
+  public getOrCreateImageElement(asset: MediaAsset): HTMLImageElement {
+    let image = this.imagePool.get(asset.id);
+    if (!image) {
+      image = new Image();
+      image.decoding = 'async';
+      if (asset.url) image.src = asset.url;
+      this.imagePool.set(asset.id, image);
+    }
+    return image;
+  }
+
+  /** Pixel size of a clip's footage once it has loaded, without creating media elements */
+  private getSourceSize(clip: Clip): { w: number; h: number } | null {
+    const asset = this.currentAssets.get(clip.assetId);
+    if (!asset) return null;
+    if (clip.type === 'image') {
+      const image = this.imagePool.get(asset.id);
+      return image && image.naturalWidth > 0 ? { w: image.naturalWidth, h: image.naturalHeight } : null;
+    }
+    const video = this.videoPool.get(asset.id);
+    return video && video.videoWidth > 0 ? { w: video.videoWidth, h: video.videoHeight } : null;
+  }
+
   public getOrCreateVideoElement(asset: MediaAsset): HTMLVideoElement {
     let video = this.videoPool.get(asset.id);
     if (!video) {
@@ -415,7 +446,7 @@ export class PreviewEngine {
       const asset = this.currentAssets.get(clip.assetId);
       if (!asset) continue;
 
-      const mediaTime = Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
+      const mediaTime = this.sourceTime(clip);
 
       if (clip.type === 'video') {
         const video = this.getOrCreateVideoElement(asset);
@@ -456,7 +487,7 @@ export class PreviewEngine {
       const asset = this.currentAssets.get(clip.assetId);
       if (!asset) continue;
 
-      const mediaTime = Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
+      const mediaTime = this.sourceTime(clip);
       const track = this.currentTracks.find((t) => t.id === clip.trackId);
       const isMuted = track?.isMuted || clip.audio?.muted || false;
       const volume = previewVolume(clip.audio, track?.isMuted ?? false, this.currentTime - clip.startTime, clip.duration);
@@ -466,11 +497,15 @@ export class PreviewEngine {
         const maxDuration = video.duration && !isNaN(video.duration) ? video.duration : asset.duration;
         const targetTime = Math.min(mediaTime, Math.max(0, maxDuration - 0.05));
 
-        video.playbackRate = clip.speed;
         video.muted = isMuted;
         video.volume = volume;
         video.currentTime = targetTime;
-        video.play().catch((err) => console.warn('Video playback warning:', err));
+        if (clip.freeze) {
+          video.pause(); // a freeze frame never plays
+        } else {
+          video.playbackRate = clip.speed;
+          video.play().catch((err) => console.warn('Video playback warning:', err));
+        }
       } else if (clip.type === 'audio') {
         const audio = this.getOrCreateAudioElement(asset);
         const maxDuration = audio.duration && !isNaN(audio.duration) ? audio.duration : asset.duration;
@@ -576,7 +611,7 @@ export class PreviewEngine {
       const asset = this.currentAssets.get(clip.assetId);
       if (!asset) continue;
 
-      const mediaTime = Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
+      const mediaTime = this.sourceTime(clip);
       const track = this.currentTracks.find((t) => t.id === clip.trackId);
       const isMuted = track?.isMuted || clip.audio?.muted || false;
       const volume = previewVolume(clip.audio, track?.isMuted ?? false, this.currentTime - clip.startTime, clip.duration);
@@ -590,6 +625,14 @@ export class PreviewEngine {
 
         video.muted = isMuted;
         video.volume = volume;
+
+        if (clip.freeze) {
+          // Hold the frame: paused, parked on the source time
+          if (!video.paused) video.pause();
+          if (Math.abs(video.currentTime - targetTime) > 0.05) video.currentTime = targetTime;
+          continue;
+        }
+
         video.playbackRate = clip.speed;
 
         if (isNewlyActivated) {
@@ -695,7 +738,16 @@ export class PreviewEngine {
       const asset = this.currentAssets.get(clip.assetId);
       if (!asset) continue;
 
-      const video = this.getOrCreateVideoElement(asset);
+      // Images and videos draw the same way; only the element and how its size is read differ
+      const media: HTMLVideoElement | HTMLImageElement =
+        clip.type === 'image' ? this.getOrCreateImageElement(asset) : this.getOrCreateVideoElement(asset);
+      const srcW = media instanceof HTMLImageElement ? media.naturalWidth : media.videoWidth;
+      const srcH = media instanceof HTMLImageElement ? media.naturalHeight : media.videoHeight;
+      // Green screen: the keyed copy replaces the footage (the blurred backdrop below still uses the original)
+      let drawable: CanvasImageSource = media;
+      if (clip.chromaKey && srcW > 0 && srcH > 0) {
+        drawable = this.chromaRenderer.render(media, srcW, srcH, clip.chromaKey) ?? media;
+      }
 
       this.ctx.save();
 
@@ -731,14 +783,14 @@ export class PreviewEngine {
       }
 
       // Blurred backdrop: the same footage, cover-fitted and blurred, fills the frame behind the clip
-      if (clip.backdropBlur && clip.backdropBlur > 0 && video.videoWidth > 0 && video.videoHeight > 0) {
-        const cover = fitRect('cover', video.videoWidth, video.videoHeight, width, height);
+      if (clip.backdropBlur && clip.backdropBlur > 0 && srcW > 0 && srcH > 0) {
+        const cover = fitRect('cover', srcW, srcH, width, height);
         const grow = 1.15; // hides the soft edge a blur leaves at the borders
         this.ctx.save();
         this.ctx.globalAlpha = opacity * transitionAlpha;
         this.ctx.filter = `blur(${backdropSigmaPx(clip.backdropBlur, height).toFixed(2)}px)`;
         this.ctx.drawImage(
-          video,
+          media,
           width / 2 - (cover.w * grow) / 2,
           height / 2 - (cover.h * grow) / 2,
           cover.w * grow,
@@ -755,17 +807,17 @@ export class PreviewEngine {
       }
       this.ctx.scale(scaleX, scaleY);
 
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
+      if (srcW > 0 && srcH > 0) {
         this.ctx.filter = canvasFilter(clip.colorGrading); // restored by ctx.restore() below
         const fit = clip.fit ?? 'stretch';
-        const rect = fitRect(fit, video.videoWidth, video.videoHeight, width, height);
+        const rect = fitRect(fit, srcW, srcH, width, height);
         if (fit === 'cover') {
           // Cover overflows the frame on one axis; only the frame-sized box is visible
           this.ctx.beginPath();
           this.ctx.rect(-width / 2, -height / 2, width, height);
           this.ctx.clip();
         }
-        this.ctx.drawImage(video, rect.x - width / 2, rect.y - height / 2, rect.w, rect.h);
+        this.ctx.drawImage(drawable, rect.x - width / 2, rect.y - height / 2, rect.w, rect.h);
       }
       this.ctx.restore();
     }
@@ -886,6 +938,7 @@ export class PreviewEngine {
       this.mediaContainer = null;
     }
     this.videoPool.clear();
+    this.imagePool.clear();
     this.audioPool.clear();
     this.timeListeners.clear();
     this.previousActiveClipIds.clear();

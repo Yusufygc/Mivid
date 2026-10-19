@@ -8,6 +8,7 @@ import { ClipVisuals } from './ClipVisuals';
 import { useAssetStore } from '@/stores/useAssetStore';
 import {
   Scissors,
+  Snowflake,
   Copy,
   Trash2,
   Magnet,
@@ -34,6 +35,8 @@ export const Timeline: React.FC = () => {
   const tracksContainerRef = useRef<HTMLDivElement>(null);
   const rulerScrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  /** True once a clip drag moved far enough to count as a drag, so the click that ends it does not reset the selection */
+  const dragMovedRef = useRef(false);
 
   const { project } = useProjectStore();
   const assets = useAssetStore((s) => s.assets);
@@ -179,6 +182,7 @@ export const Timeline: React.FC = () => {
         updateTimeFromPointer(e.clientX);
       } else if (draggingClip) {
         const deltaPixels = e.clientX - draggingClip.startX;
+        if (Math.abs(deltaPixels) > 3) dragMovedRef.current = true;
         const deltaTime = deltaPixels / zoom;
         let candidateStart = Math.max(0, draggingClip.originalStart + deltaTime);
 
@@ -203,7 +207,13 @@ export const Timeline: React.FC = () => {
             }
           }
 
-          updateClipTiming(currentClip.id, candidateStart, currentClip.duration);
+          const selectedIds = useTimelineStore.getState().getSelectedClipIds();
+          if (selectedIds.length > 1 && selectedIds.includes(currentClip.id)) {
+            // A clip of a multi-selection drags the whole selection with it
+            useTimelineStore.getState().moveClipsBy(selectedIds, candidateStart - currentClip.startTime);
+          } else {
+            updateClipTiming(currentClip.id, candidateStart, currentClip.duration);
+          }
         }
       } else if (trimmingClip) {
         const deltaPixels = e.clientX - trimmingClip.startX;
@@ -329,6 +339,16 @@ export const Timeline: React.FC = () => {
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Sil</span>
+          </button>
+
+          <button
+            onClick={() => useTimelineStore.getState().insertFreezeFrame()}
+            disabled={!selectedClipId}
+            title="Kareyi Dondur: playhead'deki kareyi 2 sn'lik bir klip olarak araya ekler"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-surface-light hover:bg-sky-500/20 hover:text-sky-300 text-gray-300 text-xs font-medium border border-surface-border disabled:opacity-30 transition-all"
+          >
+            <Snowflake className="w-3.5 h-3.5" />
+            <span>Dondur</span>
           </button>
 
           <button
@@ -487,6 +507,10 @@ export const Timeline: React.FC = () => {
                         style={{ left: `${left}px`, width: `${width}px` }}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (dragMovedRef.current) {
+                            dragMovedRef.current = false;
+                            return; // the click that ends a drag keeps the selection as it is
+                          }
                           if (e.ctrlKey || e.metaKey || e.shiftKey) {
                             toggleClipSelection(clip.id);
                           } else {
@@ -494,6 +518,16 @@ export const Timeline: React.FC = () => {
                           }
                         }}
                         onMouseDown={(e) => {
+                          dragMovedRef.current = false;
+                          // Grabbing an unselected clip selects it right away (the click that ends a drag is ignored)
+                          if (
+                            !e.ctrlKey &&
+                            !e.metaKey &&
+                            !e.shiftKey &&
+                            !useTimelineStore.getState().getSelectedClipIds().includes(clip.id)
+                          ) {
+                            setSelectedClipId(clip.id);
+                          }
                           if (track.isLocked) return;
                           setDraggingClip({
                             id: clip.id,
@@ -567,6 +601,7 @@ export const Timeline: React.FC = () => {
                         <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1 z-10 relative">
                           {clip.type === 'text' && <Type className="w-3 h-3 text-amber-300 flex-shrink-0" />}
                           {clip.type === 'effect' && <BoxSelect className="w-3 h-3 text-cyan-200 flex-shrink-0" />}
+                          {clip.freeze && <Snowflake className="w-3 h-3 text-sky-200 flex-shrink-0" />}
                           {clip.name}
                           {Math.abs(clip.speed - 1) > 0.001 && (
                             <span className="text-[9px] font-mono bg-black/40 text-amber-300 px-1 rounded flex-shrink-0">

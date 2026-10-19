@@ -6,15 +6,17 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 
 ## 1. Şu anki durum
 
-- `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, gürültü azaltma, renk ayarı). **Blur sistemi henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
-- Testler: 192 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
-- **Karar:** bu projede artık REA / CapCut incelemesi yok; CapCut'ta olmayan, işi kolaylaştıran özgün özellikler yapılıyor (hafızada kayıtlı).
-- **Kolay blur sistemi (commit bekliyor, tarayıcıda gerçek fareyle ve gerçek ffmpeg ile denendi):**
-  - Efekt, `effect` kanalında duran bir klip (ayar katmanı): `Clip.effect` (tür blur/mozaik/siyah kutu, şekil dikdörtgen/elips, güç, kenar yumuşatma, genişlik/yükseklik). Konum ve ölçek `transform` ile, yani keyframe, sürükleme, kopyala, Undo, kaydet/aç hazır.
-  - Preview'da "Bölge" aracı (sol üstte): tür seç, önizlemede dikdörtgen sürükle. Köşe tutamaçları bölgeyi yeniden boyutlandırır (karşı köşe sabit), döndürme tutamacı yok. Medya havuzunda "Efektler" sekmesi.
-  - Preview: `core/preview/effectRenderer.ts` (işlenmiş kopya + şekil maskesi). Export: `pushRegionEffect` (`split`, `trim`, tür filtresi, tek karelik `loop`'lu maske, `alphamerge`, `overlay`).
-  - **Sığdırma:** `Clip.fit` (Gerdir / Sığdır / Doldur); yeni klip varsayılanı Sığdır, eski projeler Gerdir kalır. **Bulanık arka plan:** `Clip.backdropBlur`. Preview ve export (`core/layout/fit.ts`).
-  - Efekt, videonun üstünde ve metinlerin altında çalışır.
+- `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, renk), `ea73c95` (blur sistemi). **Bu oturumun son işleri henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
+- Testler: 229 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- **Karar:** bu projede REA / CapCut incelemesi yok; özgün, işi kolaylaştıran özellikler yapılıyor (hafızada kayıtlı).
+- **Commit bekleyen işler** (hepsi tarayıcıda gerçek fare/klavye ile, export ayrıca gerçek ffmpeg ile denendi):
+  - **Resim / sticker:** `previewEngine.getOrCreateImageElement`, export `-loop 1`, klipte döşeme küçük resmi
+  - **Chroma key:** `core/chroma/chromaKey.ts` (FFmpeg formülü), `core/preview/chromaRenderer.ts`, Inspector bölümü
+  - **Dondurma karesi:** `Clip.freeze`, `insertFreezeFrame`, Timeline "Dondur" düğmesi
+  - **Çoklu klip sürükleme:** `moveClipsBy`
+  - **Sessiz medya:** `core/media/probe.ts`, `MediaAsset.hasAudio`, `ExportModal` export öncesi probe
+  - **Kanal üstünlüğü düzeltmesi:** `TimelineEngine.getActiveClipsAtTime` ve export `layers` (üst kanal üstte, `zIndex` önce)
+- **Yapılmayanlar:** karışım modları (FFmpeg `blend` alfa'yı doğru karıştırmadığı için preview/export eşleşmiyor), çoklu seçimde birlikte kırpma.
 
 ## 2. Ortam notları
 
@@ -29,7 +31,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 
 ## 3. Öncelikli işler (önerilen sıra)
 
-1. **Gerçek export'u ve yeni özellikleri Tauri içinde denemek (senin elle denemen gerekiyor).** `npm run desktop` ile aç. Özellikle: Export butonu + ilerleme olayı (`export-progress`) + "dosya konumunu aç", rotation/keyframe'li ve döndürülmüş metinli bir projenin export'u, Ctrl+S/Ctrl+O (WebView2'de `showSaveFilePicker` çalışıyor mu?), film şeridi/dalga formu (Tauri asset protokolünden `fetch`).
+1. **Gerçek export'u ve yeni özellikleri Tauri içinde denemek (senin elle denemen gerekiyor).** `npm run desktop` ile aç. Özellikle: Export butonu + ilerleme olayı (`export-progress`) + "dosya konumunu aç", rotation/keyframe'li ve döndürülmüş metinli bir projenin export'u, Ctrl+S/Ctrl+O (WebView2'de `showSaveFilePicker` çalışıyor mu?), film şeridi/dalga formu (Tauri asset protokolünden `fetch`), **chroma key önizlemesi** (asset protokolünden gelen video canvas'ı kirletirse `getImageData` hata verir; kod bunu yakalayıp anahtarsız çizer, yani önizlemede perde silinmez ama export çalışır), **sessiz medya probe'u** (export öncesi `ffmpeg -i` çıktısı), resim/sticker ve dondurma karesi export'u.
 2. **Çoklu seçimi tamamlamak.** Şu an seçili kliplerin silinmesi, kopyalanması, çoğaltılması çalışıyor; birlikte sürükleme/kırpma yok (`Timeline.tsx` sürükleme kodu tek klip).
 3. **Tauri yerel kaydet/aç diyalogları.** WebView2'de File System Access API çalışmazsa Rust tarafına (`rfd`) `save_project_dialog` / `open_project_dialog` komutları eklenmeli. Bu, C++ iş yükü kurulumunu gerektirir (bkz. Ortam notları).
 4. **Hız eğrisi (ramp), ters oynatma, dondurma karesi.**
@@ -63,6 +65,9 @@ CapCut 9.6.0.4097 kurulum klasörü (`C:\Users\yusuf\AppData\Local\CapCut\Apps\9
 - **Blur paritesi:** kenar yumuşatma preview'da bulanık maske, export'ta aynı sigma ile `gblur`'lu şekil; ikisi de gaussian ama piksel düzeyinde birebir değil. Preview'da blur canvas kenarında saydama doğru solar, export'ta kenar kopyalanır (sadece tuval kenarındaki bölgelerde fark).
 - **Bulanık arka plan export'ta** klip opaklığını sabit değerle alır (opaklık keyframe'i arka plana uygulanmaz) ve slide/wipe geçişinde arka plan kaymaz.
 - **Resim klipleri hiç çizilmiyor:** preview resim için `<video>` elemanı kullanıyor (çalışmaz), export `-loop 1` vermiyor. Sadece sesi yok sayma düzeltildi. `fit` ve renk ayarı video içindir; resim desteği ayrı iş.
+- **Chroma key önizlemesi** 960 px genişliğe indirilmiş yazılım işlemesi (kare başı ~10 ms); çok yüksek çözünürlükte hafif yumuşak görünür. Anahtar rengi birebir FFmpeg formülüyle hesaplanır, ama FFmpeg 3x3 komşuluk ortalaması ve gerçek YUV matrisini kullandığı için kenarlarda ~0.1 alfa farkı olabilir. Bulanık arka plan chroma key'den önceki kaynağı kullanır (anahtarsız).
+- **Dondurma karesi** klip uzunluğu 2 sn sabit başlar; süresi sağ kenardan kırpılarak değiştirilir. Kare, 30 fps'te dahi yarım saniyelik pencerede ilk kare seçilerek alınır (çok seyrek anahtar kareli dosyada birkaç kare kayabilir).
+- **Sessiz medya probe'u** yalnızca masaüstünde çalışır (`run_ffmpeg_export` komutunu bilerek hata verdirip stderr'i okur). Web modunda `hasAudio` bilinmez ve ses var sayılır.
 - **Slide/wipe geçiş + keyframe x:** giriş ve çıkış ofsetleri artık toplanıyor (eskiden çıkış girişi eziyordu); bu davranış değişikliği ayrıca test edilmedi.
 - **Animasyonlu opaklık export'u `geq` ile** (4K veya uzun kliplerde yavaş olabilir); 1080p, 3 sn için 1.7 sn sürdü. Çok uzun projelerde ölçüm yapılmalı.
 - **Resim klipleri export'ta** `-loop` almıyor, süre boyunca görünmeyebilir (eski sorun, doğrulanmadı).

@@ -12,4 +12,6 @@ export interface MediaAsset {
   size: number; // in bytes
   thumbnail?: string; // Base64 or object URL
   createdAt: number;
+  /** False when the file has no audio stream (probed before export); undefined = unknown, assumed to have audio */
+  hasAudio?: boolean;
 }

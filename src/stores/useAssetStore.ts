@@ -6,6 +6,7 @@ interface AssetState {
   assets: Map<string, MediaAsset>;
   addAsset: (asset: MediaAsset) => void;
   removeAsset: (id: string) => void;
+  updateAsset: (id: string, updates: Partial<MediaAsset>) => void;
   getAsset: (id: string) => MediaAsset | undefined;
   importFile: (file: File) => Promise<MediaAsset>;
   importFromPath: (filePath: string) => Promise<MediaAsset>;
@@ -31,6 +32,16 @@ export const useAssetStore = create<AssetState>((set, get) => ({
     set((state) => {
       const updated = new Map(state.assets);
       updated.set(asset.id, asset);
+      return { assets: updated };
+    });
+  },
+
+  updateAsset: (id, updates) => {
+    set((state) => {
+      const current = state.assets.get(id);
+      if (!current) return state;
+      const updated = new Map(state.assets);
+      updated.set(id, { ...current, ...updates });
       return { assets: updated };
     });
   },
@@ -150,6 +161,9 @@ export const useAssetStore = create<AssetState>((set, get) => ({
       }
     }
 
+    // A still is its own thumbnail
+    if (type === 'image') thumbnail = url;
+
     const asset: MediaAsset = {
       id,
       name: fileName,
@@ -254,6 +268,9 @@ export const useAssetStore = create<AssetState>((set, get) => ({
         Logger.warn('useAssetStore', 'Could not read audio metadata', err);
       }
     }
+
+    // A still is its own thumbnail
+    if (type === 'image') thumbnail = url;
 
     const nativePath = (file as unknown as { path?: string }).path;
 

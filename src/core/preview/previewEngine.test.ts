@@ -211,6 +211,18 @@ describe('PreviewEngine.hitTest', () => {
     expect(engine.hitTest(900, 250)).toBeNull(); // in the right bar
   });
 
+  it('uses the loaded size of a sticker to limit its hit area when fitted', () => {
+    setup([baseClip('s', 'image', { fit: 'contain' })]);
+    (engine as unknown as { currentAssets: Map<string, unknown> }).currentAssets.set('asset-s', { id: 'asset-s' });
+    (engine as unknown as { imagePool: Map<string, unknown> }).imagePool.set('asset-s', {
+      naturalWidth: 100,
+      naturalHeight: 100,
+    });
+    // 100x100 fitted into 1000x500 -> a 500x500 square in the middle
+    expect(engine.hitTest(500, 250)?.id).toBe('s');
+    expect(engine.hitTest(100, 250)).toBeNull();
+  });
+
   it('has no handles when nothing is selected or the selected clip is not active', () => {
     setup([baseClip('v', 'video', { startTime: 3 })]);
     expect(engine.getSelectionGeometry()).toBeNull();

@@ -70,7 +70,7 @@ export interface ColorGrading {
   lut?: string;
 }
 
-export type AnimatableProp = 'x' | 'y' | 'scale' | 'opacity';
+export type AnimatableProp = 'x' | 'y' | 'scale' | 'opacity' | 'rotation';
 export type Easing = 'linear' | 'ease-in-out';
 
 export interface Keyframe {

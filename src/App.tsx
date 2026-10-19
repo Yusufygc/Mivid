@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { initTimelineHistory } from '@/core/command/timelineHistory';
 import { Header } from '@/components/header/Header';
+import { RecoveryBanner } from '@/components/header/RecoveryBanner';
 import { MediaPool } from '@/components/media-pool/MediaPool';
 import { PreviewPlayer } from '@/components/preview/PreviewPlayer';
 import { Inspector } from '@/components/inspector/Inspector';
@@ -17,6 +18,7 @@ export function App() {
     <div className="flex flex-col h-screen w-screen bg-background overflow-hidden">
       {/* 1. Header Bar */}
       <Header onExportClick={() => setIsExportOpen(true)} />
+      <RecoveryBanner />
 
       {/* 2. Middle Work Area (Media Pool | Preview | Inspector) */}
       <div className="flex-1 flex overflow-hidden">

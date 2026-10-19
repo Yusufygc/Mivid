@@ -3,6 +3,7 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import { commandManager } from '@/core/command/commandManager';
 import { AspectRatio } from '@/types/project';
 import { Video, Undo2, Redo2, Download, Film } from 'lucide-react';
+import { ProjectActions } from './ProjectActions';
 
 interface HeaderProps {
   onExportClick: () => void;
@@ -81,8 +82,9 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
         </div>
       </div>
 
-      {/* Right Actions: Export Button */}
+      {/* Right Actions: Save / Open and Export */}
       <div className="flex items-center gap-3">
+        <ProjectActions />
         <button
           onClick={onExportClick}
           className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-primary to-primary-hover text-black font-semibold text-xs shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"

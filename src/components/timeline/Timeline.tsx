@@ -3,9 +3,12 @@ import { useTimelineStore } from '@/stores/useTimelineStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { previewEngine } from '@/core/preview/previewEngine';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
-import { getKeyframeTimes } from '@/core/animation/keyframes';
+import { KeyframeMarkers } from './KeyframeMarkers';
+import { ClipVisuals } from './ClipVisuals';
+import { useAssetStore } from '@/stores/useAssetStore';
 import {
   Scissors,
+  Copy,
   Trash2,
   Magnet,
   ZoomIn,
@@ -32,18 +35,22 @@ export const Timeline: React.FC = () => {
   const playheadRef = useRef<HTMLDivElement>(null);
 
   const { project } = useProjectStore();
+  const assets = useAssetStore((s) => s.assets);
   const {
     tracks,
     selectedClipId,
+    extraSelectedIds,
     zoom,
     snappingEnabled,
     currentTime,
     setCurrentTime,
     setZoom,
     setSelectedClipId,
+    toggleClipSelection,
     toggleSnapping,
     splitSelectedClip,
-    removeClip,
+    removeSelectedClips,
+    duplicateSelectedClips,
     deleteTrack,
     updateClipTiming,
     toggleTrackHide,
@@ -93,25 +100,45 @@ export const Timeline: React.FC = () => {
     return Array.from(points);
   };
 
-  // Keyboard Shortcuts for Split and Delete
+  // Keyboard shortcuts: split, delete (Shift = ripple), copy / cut / paste / duplicate
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+      const store = useTimelineStore.getState();
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'b') {
         e.preventDefault();
-        splitSelectedClip();
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedClipId) {
+        store.splitSelectedClip();
+      } else if (mod && key === 'c') {
+        if (store.copySelectedClips() > 0) e.preventDefault();
+      } else if (mod && key === 'x') {
+        if (store.copySelectedClips() > 0) {
           e.preventDefault();
-          removeClip(selectedClipId);
+          store.removeSelectedClips(false);
+        }
+      } else if (mod && key === 'v') {
+        if (store.pasteClips() > 0) e.preventDefault();
+      } else if (mod && key === 'd') {
+        e.preventDefault();
+        store.duplicateSelectedClips();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (store.selectedClipId && store.selectedKeyframeTime !== null) {
+          // A selected keyframe marker is deleted instead of the whole clip
+          e.preventDefault();
+          store.removeKeyframesAt(store.selectedClipId, store.selectedKeyframeTime);
+        } else if (store.getSelectedClipIds().length > 0) {
+          e.preventDefault();
+          store.removeSelectedClips(e.shiftKey);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [splitSelectedClip, removeClip, selectedClipId]);
+  }, []);
 
   // Handle Scrubbing with Magnetic Snapping to Clip Boundaries
   const handleRulerMouseDown = (e: React.MouseEvent) => {
@@ -262,13 +289,18 @@ export const Timeline: React.FC = () => {
 
   const getClipStyle = (clip: Clip) => {
     const isSelected = clip.id === selectedClipId;
+    const isExtraSelected = extraSelectedIds.includes(clip.id);
     let bgColor = 'bg-timeline-clipVideo border-cyan-500/50';
     if (clip.type === 'audio') bgColor = 'bg-timeline-clipAudio border-emerald-500/50';
     if (clip.type === 'text') bgColor = 'bg-amber-600/70 border-amber-400/80';
     if (clip.trackId === 'track-v2') bgColor = 'bg-timeline-clipText border-purple-500/50';
 
     return `absolute top-1 bottom-1 rounded-md border flex items-center px-2 cursor-grab active:cursor-grabbing transition-all overflow-hidden ${bgColor} ${
-      isSelected ? 'ring-2 ring-primary border-primary shadow-lg brightness-110 z-10' : 'hover:brightness-105'
+      isSelected
+        ? 'ring-2 ring-primary border-primary shadow-lg brightness-110 z-10'
+        : isExtraSelected
+        ? 'ring-2 ring-primary/60 border-primary/70 brightness-110 z-10'
+        : 'hover:brightness-105'
     }`;
   };
 
@@ -288,13 +320,23 @@ export const Timeline: React.FC = () => {
           </button>
 
           <button
-            onClick={() => selectedClipId && removeClip(selectedClipId)}
+            onClick={() => removeSelectedClips(false)}
             disabled={!selectedClipId}
-            title="Seçili Klibi Sil (Delete)"
+            title="Seçili Klipleri Sil (Delete, Shift+Delete: boşluğu kapat)"
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-surface-light hover:bg-rose-500/20 hover:text-rose-400 text-gray-300 text-xs font-medium border border-surface-border disabled:opacity-30 transition-all"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Sil</span>
+          </button>
+
+          <button
+            onClick={() => duplicateSelectedClips()}
+            disabled={!selectedClipId}
+            title="Seçili Klipleri Çoğalt (Ctrl+D). Kopyala: Ctrl+C, Yapıştır: Ctrl+V"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-surface-light hover:bg-primary/20 hover:text-primary text-gray-300 text-xs font-medium border border-surface-border disabled:opacity-30 transition-all"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Çoğalt</span>
           </button>
 
           <button
@@ -441,7 +483,11 @@ export const Timeline: React.FC = () => {
                         style={{ left: `${left}px`, width: `${width}px` }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedClipId(clip.id);
+                          if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                            toggleClipSelection(clip.id);
+                          } else {
+                            setSelectedClipId(clip.id);
+                          }
                         }}
                         onMouseDown={(e) => {
                           if (track.isLocked) return;
@@ -510,6 +556,9 @@ export const Timeline: React.FC = () => {
                           </div>
                         )}
 
+                        {/* Frames / waveform of the media behind the label */}
+                        <ClipVisuals clip={clip} asset={assets.get(clip.assetId)} zoom={zoom} />
+
                         {/* Clip Label */}
                         <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1 z-10 relative">
                           {clip.type === 'text' && <Type className="w-3 h-3 text-amber-300 flex-shrink-0" />}
@@ -522,20 +571,7 @@ export const Timeline: React.FC = () => {
                         </span>
 
                         {/* Keyframe markers (selected clip only) */}
-                        {clip.id === selectedClipId &&
-                          getKeyframeTimes(clip.keyframes).map((kfTime) => (
-                            <button
-                              key={kfTime}
-                              title={`Keyframe ${kfTime.toFixed(2)}s`}
-                              style={{ left: `${kfTime * zoom}px` }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                previewEngine.seekTo(clip.startTime + kfTime);
-                              }}
-                              className="absolute bottom-0.5 w-2.5 h-2.5 -ml-[5px] rotate-45 bg-amber-400 border border-black/60 hover:bg-white z-20"
-                            />
-                          ))}
+                        {clip.id === selectedClipId && <KeyframeMarkers clip={clip} zoom={zoom} />}
 
                         {/* Transition Out Visual */}
                         {clip.transitionOut && (

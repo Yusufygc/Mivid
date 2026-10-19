@@ -114,6 +114,64 @@ describe('PreviewEngine.hitTest', () => {
     expect(engine.hitTest(500 + 40, 250)?.id).toBe('v');
   });
 
+  it('exposes selection handles at the box corners and a rotation handle above the top edge', () => {
+    setup([
+      baseClip('v', 'video', {
+        transform: { x: 0, y: 0, scaleX: 0.5, scaleY: 0.5, rotation: 0, opacity: 1, zIndex: 1 },
+      }),
+    ]);
+    engine.setSelectedClipId('v');
+    const g = engine.getSelectionGeometry()!;
+    expect(g.anchor).toEqual({ x: 500, y: 250 });
+    expect(g.handles.nw).toEqual({ x: 250, y: 125 });
+    expect(g.handles.se).toEqual({ x: 750, y: 375 });
+    expect(g.handles.rotate.x).toBeCloseTo(500);
+    expect(g.handles.rotate.y).toBeLessThan(125);
+
+    expect(engine.hitHandle(250, 125)).toBe('nw');
+    expect(engine.hitHandle(750, 375)).toBe('se');
+    expect(engine.hitHandle(g.handles.rotate.x, g.handles.rotate.y)).toBe('rotate');
+    expect(engine.hitHandle(500, 250)).toBeNull();
+  });
+
+  it('rotates the handles with the clip', () => {
+    setup([
+      baseClip('v', 'video', {
+        transform: { x: 0, y: 0, scaleX: 0.2, scaleY: 0.2, rotation: 90, opacity: 1, zIndex: 1 },
+      }),
+    ]);
+    engine.setSelectedClipId('v');
+    const g = engine.getSelectionGeometry()!;
+    // local nw corner (-500,-250) * 0.2 = (-100,-50), rotated 90deg -> (50, -100)
+    expect(g.handles.nw.x).toBeCloseTo(500 + 50);
+    expect(g.handles.nw.y).toBeCloseTo(250 - 100);
+    // "up" now points to the right of the screen
+    expect(g.handles.rotate.x).toBeGreaterThan(g.topCenter.x);
+  });
+
+  it('keeps handles of a full-frame clip on the canvas so they can be grabbed', () => {
+    setup([baseClip('v', 'video')]); // fills the 1000x500 canvas exactly
+    engine.setSelectedClipId('v');
+    const g = engine.getSelectionGeometry()!;
+    const margin = engine.getHandleSize() / 2;
+    for (const h of Object.values(g.handles)) {
+      expect(h.x).toBeGreaterThanOrEqual(margin);
+      expect(h.x).toBeLessThanOrEqual(1000 - margin);
+      expect(h.y).toBeGreaterThanOrEqual(margin);
+      expect(h.y).toBeLessThanOrEqual(500 - margin);
+    }
+    expect(engine.hitHandle(g.handles.rotate.x, g.handles.rotate.y)).toBe('rotate');
+    expect(engine.hitHandle(g.handles.nw.x, g.handles.nw.y)).toBe('nw');
+  });
+
+  it('has no handles when nothing is selected or the selected clip is not active', () => {
+    setup([baseClip('v', 'video', { startTime: 3 })]);
+    expect(engine.getSelectionGeometry()).toBeNull();
+    engine.setSelectedClipId('v');
+    expect(engine.getSelectionGeometry()).toBeNull(); // not active at t=1
+    expect(engine.hitHandle(500, 250)).toBeNull();
+  });
+
   it('uses the animated position when the clip has keyframes', () => {
     setup([
       textClip('t', {

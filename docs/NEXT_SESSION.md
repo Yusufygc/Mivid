@@ -1,21 +1,20 @@
 # Sonraki Oturum Planı (NEXT_SESSION.md)
 
-Son güncelleme: 2026-10-18. Dal: `feature`. Bu belge, bir sonraki oturumda nereden devam edileceğini anlatır. Genel görev takibi için `TODO.md`'ye bakın.
+Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nereden devam edileceğini anlatır. Genel görev takibi için `TODO.md`'ye bakın.
 
 ---
 
 ## 1. Şu anki durum
 
-- `feature` dalının son commit'leri:
-  - `5dccaf5` Rust derlemeden masaüstü başlatıcı (`npm run desktop`) ve pencere ortalama
-  - `ba9245d` Preview üzerinde seçili klibi (video/metin) fareyle konumlandırma
-  - `f2f8c00` Keyframe animasyonu (konum, ölçek, opaklık) ve klip hızı (0.25x–4x)
-- Çalışma ağacı temiz (bu belge hariç). Hiçbir şey push edilmedi.
-- Testler: 77 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
-- Tamamlanan son özellikler:
-  - Keyframe sistemi: `src/core/animation/keyframes.ts`, Inspector ◇/◀/▶ kontrolleri, Timeline keyframe elmasları, preview ve export desteği
-  - Klip hızı: Inspector hız bölümü, ripple, export'ta `setpts` + `atempo` zinciri
-  - Preview'da fareyle sürükleme: `previewEngine.hitTest`, seçili klip çerçevesi, merkez yapışma (Alt = serbest), Inspector X/Y canlı güncellenir
+- `feature` dalında, **commit edilmemiş** çalışma ağacı var (madde 3–7 aşağıda). Son commit: `cde2c13` (Undo/Redo). Hiçbir şey push edilmedi.
+- Testler: 132 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- Bu oturumda yapılanlar (hepsi tarayıcıda gerçek fare/klavye ile denendi, export ayrıca gerçek ffmpeg ile):
+  - **Preview tutamaçları:** köşelerden ölçekleme, yuvarlak tutamaçla döndürme (Shift = 15°), tutamaçlar tuval içinde kalır. `src/core/preview/handleMath.ts`, `previewEngine.getSelectionGeometry/hitHandle`
+  - **Rotation keyframe + export:** `AnimatableProp`'a `rotation` eklendi. Export `pushVisualLayer` ile yeniden düzenlendi (video ve metin aynı hat). Animasyonlu/döndürülmüş metin saydam katman üzerinde çiziliyor.
+  - **Keyframe düzenleme:** timeline'da elmasları sürükle/seç/Delete, easing düğmesi (`KeyframeMarkers.tsx`, `KeyframeControls.tsx`)
+  - **Proje kaydet/aç + otomatik kayıt:** `src/core/project/` (`projectFile`, `projectSession`, `projectIO`), `ProjectActions` ve `RecoveryBanner`
+  - **Timeline:** film şeridi + dalga formu (`ClipVisuals`, `mediaCache`), çoklu seçim, kopyala/kes/yapıştır/çoğalt, ripple silme
+- Önceki oturumdan: keyframe sistemi + hız, preview'da sürükleme, Undo/Redo, `npm run desktop`.
 
 ## 2. Ortam notları
 
@@ -30,13 +29,11 @@ Son güncelleme: 2026-10-18. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 
 ## 3. Öncelikli işler (önerilen sıra)
 
-1. **Gerçek export'u Tauri içinde denemek.** Export komutu headless ffmpeg ile doğrulandı (hız 2x, animasyonlu konum/ölçek/opaklık, süre 3.00s, sesli), ama uygulama içindeki Export butonu, ilerleme olayı (`export-progress`) ve "dosya konumunu aç" yeni değişikliklerle denenmedi. `npm run desktop` ile deneyin.
-2. ~~**Undo / Redo'yu gerçekten bağlamak.**~~ Yapıldı: `src/core/command/timelineHistory.ts`. Timeline `tracks` değişimlerini store aboneliğiyle kaydeder (aynı kliplerde 800 ms içindeki düzenlemeler tek adım). Kapsam dışı kalanlar: asset ekleme/silme, proje ayarları (en-boy oranı, ad), seçim ve playhead; bunlar geri alınmaz.
-3. **Preview'da köşe tutamaçlarıyla ölçekleme ve döndürme.** Şu an yalnızca konum sürükleniyor. Tutamaçlar `updateClipTransform` ile gitmeli (auto-key zaten çalışır). `hitTest` dönüşü ve ölçeği zaten dikkate alıyor.
-4. **Rotation keyframe + export.** Preview rotation'ı uyguluyor, export (FFmpeg) hiç uygulamıyor. `AnimatableProp`'a `rotation` eklenmeli, export'ta `rotate` filtresi (`ow`/`oh` sabit boyut, alfa için `fillcolor=none`) yazılmalı.
-5. **Keyframe düzenleme iyileştirmeleri.** Timeline'da elmasları sürükleyerek taşıma, keyframe başına easing seçici (modelde `linear`/`ease-in-out` var, UI yok, `setKeyframeEasing` store'da hazır), seçili keyframe'i silme kısayolu.
-6. **Proje kaydet/yükle + otomatik kaydetme.** Şu an hiçbir kalıcılık yok. JSON proje dosyası (tracks, assets yolları, project ayarları). Asset yolları için Tauri tarafında dosya okuma/yazma gerekebilir.
-7. **Timeline kalitesi.** Ses dalga formu (waveform), klip küçük resimleri, çoklu seçim, kopyala/yapıştır, ripple delete.
+1. **Gerçek export'u ve yeni özellikleri Tauri içinde denemek (senin elle denemen gerekiyor).** `npm run desktop` ile aç. Özellikle: Export butonu + ilerleme olayı (`export-progress`) + "dosya konumunu aç", rotation/keyframe'li ve döndürülmüş metinli bir projenin export'u, Ctrl+S/Ctrl+O (WebView2'de `showSaveFilePicker` çalışıyor mu?), film şeridi/dalga formu (Tauri asset protokolünden `fetch`).
+2. **Çoklu seçimi tamamlamak.** Şu an seçili kliplerin silinmesi, kopyalanması, çoğaltılması çalışıyor; birlikte sürükleme/kırpma yok (`Timeline.tsx` sürükleme kodu tek klip).
+3. **Tauri yerel kaydet/aç diyalogları.** WebView2'de File System Access API çalışmazsa Rust tarafına (`rfd`) `save_project_dialog` / `open_project_dialog` komutları eklenmeli. Bu, C++ iş yükü kurulumunu gerektirir (bkz. Ortam notları).
+4. **Hız eğrisi (ramp), ters oynatma, dondurma karesi.**
+5. **Ses:** `fadeIn`/`fadeOut` modelde var, UI ve export'ta uygulanmıyor (doğrulanmadı); gürültü azaltma.
 
 ## 4. Sonraki kademe (CapCut incelemesinden)
 
@@ -57,6 +54,9 @@ CapCut 9.6.0.4097 kurulum klasörü (`C:\Users\yusuf\AppData\Local\CapCut\Apps\9
 - **`videoPool` asset başına tek `<video>`:** aynı asset'in iki klibi aynı anda aktifse (örn. üst üste iki kopya) aynı elemanı paylaşır ve çakışır.
 - **Preview ve export videoyu tüm kareye gerdiriyor** (en-boy oranı korunmuyor, `drawImage(video, -W/2, -H/2, W, H)`). Aspect-fit seçeneği yok.
 - **Sol kırpma + keyframe:** sol tutamacı içeri sürükleyince kırpılan bölgedeki keyframe'ler kaybolur; geri sürükleyince eğri orijinaline dönmez (sınır keyframe'inin değeri tutulur).
+- **Metin export'u:** çok satırlı metin export'ta tek satıra çevriliyor (`escapeFFmpegText` `\n` -> boşluk); preview çok satır çiziyor.
+- **Export'ta ffmpeg sürümü:** Tauri önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanıyor, o çalışıyor. Proje köküne konulan `ffmpeg.exe` (2025-08 full build) `drawtext`'te fontconfig yokken segfault veriyor (`fontfile=` verilmezse). Export testi yaparken `C:\ffmpeg\bin` sürümünü kullanın.
+- **Film şeridi** her video asset'i için 12 kare, tüm asset'e esnetilmiş tek şerit (kareler yatayda esnetilir); dalga formu 10 dakikadan uzun seslerde üretilmez.
 - **Slide/wipe geçiş + keyframe x:** giriş ve çıkış ofsetleri artık toplanıyor (eskiden çıkış girişi eziyordu); bu davranış değişikliği ayrıca test edilmedi.
 - **Animasyonlu opaklık export'u `geq` ile** (4K veya uzun kliplerde yavaş olabilir); 1080p, 3 sn için 1.7 sn sürdü. Çok uzun projelerde ölçüm yapılmalı.
 - **Resim klipleri export'ta** `-loop` almıyor, süre boyunca görünmeyebilir (eski sorun, doğrulanmadı).

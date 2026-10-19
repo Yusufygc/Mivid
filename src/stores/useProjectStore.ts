@@ -9,6 +9,8 @@ interface ProjectState {
   setFps: (fps: number) => void;
   setDuration: (duration: number) => void;
   setBackgroundColor: (color: string) => void;
+  /** Replaces the whole project settings (opening a project file) */
+  loadProject: (project: ProjectSettings) => void;
 }
 
 const ASPECT_RATIO_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {
@@ -61,5 +63,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   setBackgroundColor: (backgroundColor) => {
     set((state) => ({ project: { ...state.project, backgroundColor } }));
+  },
+
+  loadProject: (project) => {
+    Logger.info('useProjectStore', `Project loaded: ${project.name}`);
+    set({ project: { ...initialProject, ...project } });
   },
 }));

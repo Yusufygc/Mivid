@@ -7,6 +7,9 @@ import { resolveTransform } from '@/core/animation/keyframes';
 
 export type TimeUpdateListener = (time: number) => void;
 
+/** Handles drawn on the selected clip: four corners scale it, the round one above rotates it */
+export type HandleType = 'nw' | 'ne' | 'se' | 'sw' | 'rotate';
+
 /** Rectangle in clip-local space: origin is the clip anchor (canvas center + x/y), before scale and rotation */
 export interface LocalRect {
   x0: number;
@@ -160,6 +163,121 @@ export class PreviewEngine {
     return null;
   }
 
+  /** Handle size in project pixels (square side / circle diameter) */
+  public getHandleSize(): number {
+    return Math.max(14, (this.currentProject?.width ?? 1920) / 90);
+  }
+
+  /**
+   * World-space geometry (project pixels) of the selected clip when it is active at the playhead:
+   * anchor point, the four box corners and the rotation handle above the top edge.
+   */
+  public getSelectionGeometry(): {
+    clipId: string;
+    anchor: { x: number; y: number };
+    rotation: number;
+    scale: number;
+    handles: Record<HandleType, { x: number; y: number }>;
+    topCenter: { x: number; y: number };
+  } | null {
+    if (!this.currentProject || !this.selectedClipId) return null;
+    const { width, height } = this.currentProject;
+
+    const clip = TimelineEngine.getActiveClipsAtTime(this.currentTracks, this.currentTime).find(
+      (c) => c.id === this.selectedClipId
+    );
+    const rect = clip ? this.getClipLocalRect(clip) : null;
+    if (!clip || !rect) return null;
+
+    const t = resolveTransform(clip, this.currentTime - clip.startTime);
+    const rad = (t.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const anchor = { x: width / 2 + t.x, y: height / 2 + t.y };
+    const toWorld = (lx: number, ly: number) => {
+      const sx = lx * t.scaleX;
+      const sy = ly * t.scaleY;
+      return { x: anchor.x + sx * cos - sy * sin, y: anchor.y + sx * sin + sy * cos };
+    };
+
+    const topCenter = toWorld((rect.x0 + rect.x1) / 2, rect.y0);
+    // Local "up" rotated into world space, pushed outward by a fixed screen-ish distance
+    const offset = this.getHandleSize() * 2.5;
+    const upX = sin;
+    const upY = -cos;
+
+    // Handles of a clip that fills or leaves the canvas stay on the canvas so they can always be grabbed
+    const margin = this.getHandleSize() / 2;
+    const onCanvas = (p: { x: number; y: number }) => ({
+      x: Math.min(width - margin, Math.max(margin, p.x)),
+      y: Math.min(height - margin, Math.max(margin, p.y)),
+    });
+
+    return {
+      clipId: clip.id,
+      anchor,
+      rotation: t.rotation,
+      scale: t.scaleX,
+      topCenter,
+      handles: {
+        nw: onCanvas(toWorld(rect.x0, rect.y0)),
+        ne: onCanvas(toWorld(rect.x1, rect.y0)),
+        se: onCanvas(toWorld(rect.x1, rect.y1)),
+        sw: onCanvas(toWorld(rect.x0, rect.y1)),
+        rotate: onCanvas({ x: topCenter.x + upX * offset, y: topCenter.y + upY * offset }),
+      },
+    };
+  }
+
+  /** Handle of the selected clip under a point given in project pixels, or null */
+  public hitHandle(px: number, py: number): HandleType | null {
+    const geometry = this.getSelectionGeometry();
+    if (!geometry) return null;
+    const reach = this.getHandleSize() * 0.75;
+
+    // Rotation first: it sits outside the box, corner handles may overlap on tiny clips
+    const order: HandleType[] = ['rotate', 'nw', 'ne', 'se', 'sw'];
+    for (const type of order) {
+      const h = geometry.handles[type];
+      if (Math.hypot(px - h.x, py - h.y) <= reach) return type;
+    }
+    return null;
+  }
+
+  private drawHandles(lineWidth: number): void {
+    const geometry = this.getSelectionGeometry();
+    if (!this.ctx || !geometry) return;
+    const ctx = this.ctx;
+    const size = this.getHandleSize();
+
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = lineWidth;
+    ctx.setLineDash([]);
+
+    // Stem from the top edge to the rotation handle
+    ctx.beginPath();
+    ctx.moveTo(geometry.topCenter.x, geometry.topCenter.y);
+    ctx.lineTo(geometry.handles.rotate.x, geometry.handles.rotate.y);
+    ctx.stroke();
+
+    for (const type of ['nw', 'ne', 'se', 'sw'] as const) {
+      const h = geometry.handles[type];
+      ctx.beginPath();
+      ctx.rect(h.x - size / 2, h.y - size / 2, size, size);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    const r = geometry.handles.rotate;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private drawSelectionOverlay(activeClips: Clip[]): void {
     if (!this.ctx || !this.currentProject) return;
     const { width, height } = this.currentProject;
@@ -179,6 +297,8 @@ export class PreviewEngine {
       ctx.setLineDash([lineWidth * 4, lineWidth * 3]);
       ctx.strokeRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
       ctx.restore();
+
+      this.drawHandles(lineWidth);
     }
 
     if (this.guides.x || this.guides.y) {

@@ -4,6 +4,7 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import { useAssetStore } from '@/stores/useAssetStore';
 import { previewEngine } from '@/core/preview/previewEngine';
 import { resolveTransform } from '@/core/animation/keyframes';
+import { cursorForHandle, rotationFromDrag, scaleFromDrag } from '@/core/preview/handleMath';
 import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 
@@ -25,13 +26,17 @@ export const PreviewPlayer: React.FC = () => {
     updateClipTransform,
   } = useTimelineStore();
   const [playing, setPlaying] = useState(isPlaying);
-  const dragRef = useRef<{
-    clipId: string;
-    startClientX: number;
-    startClientY: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
+  type DragState =
+    | { mode: 'move'; clipId: string; startClientX: number; startClientY: number; originX: number; originY: number }
+    | {
+        mode: 'scale' | 'rotate';
+        clipId: string;
+        anchor: { x: number; y: number };
+        start: { x: number; y: number };
+        originScale: number;
+        originRotation: number;
+      };
+  const dragRef = useRef<DragState | null>(null);
 
   // Show the selected clip's outline on the canvas
   useEffect(() => {
@@ -48,6 +53,27 @@ export const PreviewPlayer: React.FC = () => {
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     const point = toProjectPoint(e);
+
+    // Handles of the already selected clip win over everything under them
+    const handle = previewEngine.hitHandle(point.x, point.y);
+    const geometry = handle ? previewEngine.getSelectionGeometry() : null;
+    if (handle && geometry) {
+      const handleClip = tracks.flatMap((t) => t.clips).find((c) => c.id === geometry.clipId);
+      const handleTrack = tracks.find((t) => t.id === handleClip?.trackId);
+      if (!handleClip || handleTrack?.isLocked) return;
+
+      dragRef.current = {
+        mode: handle === 'rotate' ? 'rotate' : 'scale',
+        clipId: geometry.clipId,
+        anchor: geometry.anchor,
+        start: { x: point.x, y: point.y },
+        originScale: geometry.scale,
+        originRotation: geometry.rotation,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
     const hit = previewEngine.hitTest(point.x, point.y);
     if (!hit) return;
 
@@ -57,6 +83,7 @@ export const PreviewPlayer: React.FC = () => {
 
     const t = resolveTransform(hit, previewEngine.getCurrentTime() - hit.startTime);
     dragRef.current = {
+      mode: 'move',
       clipId: hit.id,
       startClientX: e.clientX,
       startClientY: e.clientY,
@@ -71,8 +98,29 @@ export const PreviewPlayer: React.FC = () => {
     const point = toProjectPoint(e);
 
     if (!drag) {
-      const hit = previewEngine.hitTest(point.x, point.y);
-      e.currentTarget.style.cursor = hit ? 'move' : 'default';
+      const handle = previewEngine.hitHandle(point.x, point.y);
+      if (handle) {
+        e.currentTarget.style.cursor = cursorForHandle(handle, previewEngine.getSelectionGeometry()?.rotation ?? 0);
+      } else {
+        e.currentTarget.style.cursor = previewEngine.hitTest(point.x, point.y) ? 'move' : 'default';
+      }
+      return;
+    }
+
+    if (drag.mode !== 'move') {
+      if (drag.mode === 'scale') {
+        const scale = scaleFromDrag(drag.originScale, drag.anchor, drag.start, point);
+        updateClipTransform(drag.clipId, { scaleX: scale, scaleY: scale });
+      } else {
+        const rotation = rotationFromDrag(
+          drag.originRotation,
+          drag.anchor,
+          drag.start,
+          point,
+          e.shiftKey ? 15 : undefined
+        );
+        updateClipTransform(drag.clipId, { rotation });
+      }
       return;
     }
 

@@ -38,7 +38,7 @@ export const Inspector: React.FC = () => {
     );
   }
 
-  const { transform, audio } = selectedClip;
+  const { audio } = selectedClip;
 
   // Animated properties show the value at the playhead; edits on them become keyframes (auto-key)
   const localTime = currentTime - selectedClip.startTime;
@@ -47,6 +47,7 @@ export const Inspector: React.FC = () => {
   const xValue = evaluateProp(selectedClip, 'x', evalTime);
   const yValue = evaluateProp(selectedClip, 'y', evalTime);
   const opacityValue = evaluateProp(selectedClip, 'opacity', evalTime);
+  const rotationValue = evaluateProp(selectedClip, 'rotation', evalTime);
   const isMedia = selectedClip.type === 'video' || selectedClip.type === 'audio';
 
   return (
@@ -228,16 +229,19 @@ export const Inspector: React.FC = () => {
 
             {/* Rotation */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-gray-400">
+              <div className="flex justify-between items-center text-xs text-gray-400">
                 <span>Döndürme (Rotation)</span>
-                <span className="font-mono text-gray-200">{transform?.rotation ?? 0}°</span>
+                <div className="flex items-center gap-2">
+                  <KeyframeControls clip={selectedClip} prop="rotation" localTime={localTime} />
+                  <span className="font-mono text-gray-200">{Math.round(rotationValue)}°</span>
+                </div>
               </div>
               <input
                 type="range"
                 min="-180"
                 max="180"
-                step="5"
-                value={transform?.rotation ?? 0}
+                step="1"
+                value={rotationValue}
                 onChange={(e) => updateClipTransform(selectedClip.id, { rotation: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-primary"
               />

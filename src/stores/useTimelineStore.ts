@@ -3,8 +3,12 @@ import { Track, Clip, Transform, AudioSettings, TextProperties, AnimatableProp, 
 import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import {
+  ANIMATABLE_PROPS,
   evaluateProp,
   findKeyframeAt,
+  KEYFRAME_EPSILON,
+  moveKeyframesAtTime,
+  removeKeyframesAtTime,
   removeKeyframe as removeKeyframeFrom,
   scaleKeyframeTimes,
   shiftKeyframesForStartTrim,
@@ -17,6 +21,10 @@ import { useProjectStore } from './useProjectStore';
 interface TimelineStoreState {
   tracks: Track[];
   selectedClipId: string | null;
+  /** Clip-local time of the keyframe marker selected on the timeline (all properties at that time) */
+  selectedKeyframeTime: number | null;
+  /** Other selected clips besides `selectedClipId` (multi-select) */
+  extraSelectedIds: string[];
   currentTime: number; // in seconds
   zoom: number; // Pixels per second (e.g. 50px = 1s)
   isPlaying: boolean;
@@ -28,6 +36,19 @@ interface TimelineStoreState {
   togglePlay: () => void;
   setZoom: (zoom: number) => void;
   setSelectedClipId: (id: string | null) => void;
+  setSelectedKeyframeTime: (time: number | null) => void;
+  /** Ctrl/Shift click: adds the clip to the selection or removes it; the clicked clip becomes the primary one */
+  toggleClipSelection: (id: string) => void;
+  /** Ids of all selected clips (primary + extra), in selection order, only clips that still exist */
+  getSelectedClipIds: () => string[];
+  /** Deletes the selected clips. With `ripple`, later clips on the same track move left to close the gap. */
+  removeSelectedClips: (ripple?: boolean) => number;
+  /** Copies the selected clips to the clipboard; returns how many were copied */
+  copySelectedClips: () => number;
+  /** Pastes the clipboard at the playhead (or `atTime`) and selects the pasted clips; returns how many were pasted */
+  pasteClips: (atTime?: number) => number;
+  /** Copies the selection and pastes it right after the selection */
+  duplicateSelectedClips: () => number;
   toggleSnapping: () => void;
 
   // Track & Clip Actions
@@ -48,6 +69,10 @@ interface TimelineStoreState {
   toggleKeyframe: (clipId: string, prop: AnimatableProp) => void;
   removeKeyframe: (clipId: string, prop: AnimatableProp, keyframeId: string) => void;
   setKeyframeEasing: (clipId: string, prop: AnimatableProp, keyframeId: string, easing: Easing) => void;
+  /** Moves all keyframes at `fromTime` to `toTime` (clip-local seconds) */
+  moveKeyframes: (clipId: string, fromTime: number, toTime: number) => void;
+  /** Removes all keyframes at a clip-local time; properties left without keyframes keep their last value */
+  removeKeyframesAt: (clipId: string, time: number) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
@@ -83,9 +108,27 @@ const bakeProp = (transform: Transform, prop: AnimatableProp, value: number): Tr
       return { ...transform, y: value };
     case 'opacity':
       return { ...transform, opacity: value };
+    case 'rotation':
+      return { ...transform, rotation: value };
     case 'scale':
       return { ...transform, scaleX: value, scaleY: value };
   }
+};
+
+type SelectionState = Pick<TimelineStoreState, 'tracks' | 'selectedClipId' | 'extraSelectedIds'>;
+
+/** Selected clip ids in selection order (extras first, primary last), without ids that no longer exist */
+const selectedIdsOf = (state: SelectionState): string[] => {
+  const existing = new Set(state.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+  const ids = [...state.extraSelectedIds, ...(state.selectedClipId ? [state.selectedClipId] : [])];
+  return ids.filter((id, i) => existing.has(id) && ids.indexOf(id) === i);
+};
+
+/** Clips copied with Ctrl+C / cut; shared by the whole app, not part of the undoable state */
+let clipboard: { clips: Clip[]; baseTime: number } | null = null;
+
+export const clearClipboard = (): void => {
+  clipboard = null;
 };
 
 const initialTracks: Track[] = [
@@ -130,6 +173,8 @@ const initialTracks: Track[] = [
 export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   tracks: initialTracks,
   selectedClipId: null,
+  selectedKeyframeTime: null,
+  extraSelectedIds: [],
   currentTime: 0,
   zoom: 60,
   isPlaying: false,
@@ -152,17 +197,131 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
   },
 
   setSelectedClipId: (selectedClipId) => {
-    set({ selectedClipId });
+    set((state) => ({
+      selectedClipId,
+      extraSelectedIds: [],
+      // A keyframe selection belongs to one clip
+      selectedKeyframeTime: selectedClipId === state.selectedClipId ? state.selectedKeyframeTime : null,
+    }));
+  },
+
+  setSelectedKeyframeTime: (selectedKeyframeTime) => {
+    set({ selectedKeyframeTime });
   },
 
   restoreTracks: (tracks) => {
     syncProjectDuration(tracks);
+    set((state) => {
+      const exists = (id: string | null) => !!id && tracks.some((t) => t.clips.some((c) => c.id === id));
+      return {
+        tracks,
+        selectedClipId: exists(state.selectedClipId) ? state.selectedClipId : null,
+        extraSelectedIds: state.extraSelectedIds.filter((id) => exists(id)),
+      };
+    });
+  },
+
+  getSelectedClipIds: () => selectedIdsOf(get()),
+
+  toggleClipSelection: (id) => {
+    const current = selectedIdsOf(get());
+    const next = current.includes(id) ? current.filter((c) => c !== id) : [...current, id];
     set((state) => ({
-      tracks,
-      selectedClipId: tracks.some((t) => t.clips.some((c) => c.id === state.selectedClipId))
-        ? state.selectedClipId
-        : null,
+      selectedClipId: next.length > 0 ? next[next.length - 1] : null,
+      extraSelectedIds: next.slice(0, -1),
+      selectedKeyframeTime: next.length > 0 && next[next.length - 1] === state.selectedClipId ? state.selectedKeyframeTime : null,
     }));
+  },
+
+  removeSelectedClips: (ripple = false) => {
+    const ids = new Set(selectedIdsOf(get()));
+    if (ids.size === 0) return 0;
+
+    const newTracks = get().tracks.map((track) => {
+      const removed = track.clips.filter((c) => ids.has(c.id));
+      if (removed.length === 0) return track;
+
+      const kept = track.clips
+        .filter((c) => !ids.has(c.id))
+        .map((c) => {
+          if (!ripple) return c;
+          // Close the gaps left by every deleted clip that started before this one
+          const shift = removed.filter((r) => r.startTime < c.startTime).reduce((sum, r) => sum + r.duration, 0);
+          return shift > 0 ? { ...c, startTime: clampTime(c.startTime - shift, 0) } : c;
+        });
+      return { ...track, clips: kept };
+    });
+
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks, selectedClipId: null, extraSelectedIds: [], selectedKeyframeTime: null });
+    Logger.info('useTimelineStore', `Removed ${ids.size} clip(s)${ripple ? ' with ripple' : ''}`);
+    return ids.size;
+  },
+
+  copySelectedClips: () => {
+    const ids = selectedIdsOf(get());
+    const clips = get()
+      .tracks.flatMap((t) => t.clips)
+      .filter((c) => ids.includes(c.id))
+      .sort((a, b) => a.startTime - b.startTime);
+    if (clips.length === 0) return 0;
+
+    clipboard = { clips, baseTime: clips[0].startTime };
+    return clips.length;
+  },
+
+  pasteClips: (atTime) => {
+    if (!clipboard || clipboard.clips.length === 0) return 0;
+    const { clips, baseTime } = clipboard;
+    const offset = (atTime ?? get().currentTime) - baseTime;
+
+    let tracks = get().tracks;
+    const pastedIds: string[] = [];
+
+    for (const source of clips) {
+      const startTime = clampTime(Math.max(0, source.startTime + offset));
+      const type = source.type === 'text' ? 'text' : source.type === 'audio' ? 'audio' : 'video';
+
+      // Prefer the clip's own track, otherwise any free lane of the same kind (a new one is created if needed)
+      const ownTrack = tracks.find((t) => t.id === source.trackId);
+      let trackId: string;
+      if (ownTrack && TimelineEngine.isTrackFreeAt(ownTrack, startTime, source.duration)) {
+        trackId = ownTrack.id;
+      } else {
+        const placement = TimelineEngine.findOrCreateTrackForPlacement(tracks, type, startTime, source.duration);
+        tracks = placement.updatedTracks;
+        trackId = placement.targetTrackId;
+      }
+
+      const id = crypto.randomUUID ? crypto.randomUUID() : `clip-${Date.now()}-${pastedIds.length}`;
+      pastedIds.push(id);
+      const pasted: Clip = { ...source, id, trackId, startTime };
+      tracks = tracks.map((t) =>
+        t.id === trackId ? { ...t, clips: [...t.clips, pasted].sort((a, b) => a.startTime - b.startTime) } : t
+      );
+    }
+
+    syncProjectDuration(tracks);
+    set({
+      tracks,
+      selectedClipId: pastedIds[pastedIds.length - 1],
+      extraSelectedIds: pastedIds.slice(0, -1),
+      selectedKeyframeTime: null,
+    });
+    Logger.info('useTimelineStore', `Pasted ${pastedIds.length} clip(s)`);
+    return pastedIds.length;
+  },
+
+  duplicateSelectedClips: () => {
+    const ids = selectedIdsOf(get());
+    const selected = get()
+      .tracks.flatMap((t) => t.clips)
+      .filter((c) => ids.includes(c.id));
+    if (selected.length === 0) return 0;
+
+    const end = Math.max(...selected.map((c) => c.startTime + c.duration));
+    get().copySelectedClips();
+    return get().pasteClips(end);
   },
 
   toggleSnapping: () => {
@@ -474,6 +633,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
             ['x', transformUpdates.x],
             ['y', transformUpdates.y],
             ['opacity', transformUpdates.opacity],
+            ['rotation', transformUpdates.rotation],
             ['scale', transformUpdates.scaleX ?? transformUpdates.scaleY],
           ];
 
@@ -574,6 +734,40 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           const remaining = (c.keyframes?.[prop]?.length ?? 0) - 1;
           const transform = remaining === 0 ? bakeProp(c.transform, prop, target.value) : c.transform;
           return { ...c, transform, keyframes: removeKeyframeFrom(c.keyframes, prop, keyframeId) };
+        }),
+      })),
+    }));
+  },
+
+  moveKeyframes: (clipId, fromTime, toTime) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId ? { ...c, keyframes: moveKeyframesAtTime(c.keyframes, fromTime, toTime, c.duration) } : c
+        ),
+      })),
+    }));
+  },
+
+  removeKeyframesAt: (clipId, time) => {
+    set((state) => ({
+      selectedKeyframeTime: null,
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId || !c.keyframes) return c;
+
+          // A property that loses its last keyframe keeps the value it had there
+          let transform = c.transform;
+          for (const prop of ANIMATABLE_PROPS) {
+            const list = c.keyframes[prop];
+            if (!list || list.length === 0) continue;
+            const remaining = list.filter((k) => Math.abs(k.time - time) >= KEYFRAME_EPSILON);
+            const removed = list.find((k) => Math.abs(k.time - time) < KEYFRAME_EPSILON);
+            if (remaining.length === 0 && removed) transform = bakeProp(transform, prop, removed.value);
+          }
+          return { ...c, transform, keyframes: removeKeyframesAtTime(c.keyframes, time) };
         }),
       })),
     }));

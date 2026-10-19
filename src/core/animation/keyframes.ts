@@ -1,6 +1,6 @@
 import { AnimatableProp, Clip, ClipKeyframes, Easing, Keyframe, Transform } from '@/types/timeline';
 
-export const ANIMATABLE_PROPS: AnimatableProp[] = ['x', 'y', 'scale', 'opacity'];
+export const ANIMATABLE_PROPS: AnimatableProp[] = ['x', 'y', 'scale', 'opacity', 'rotation'];
 
 /** Two keyframes closer than this (seconds) are treated as the same keyframe */
 export const KEYFRAME_EPSILON = 0.02;
@@ -25,6 +25,8 @@ export const getBaseValue = (clip: Clip, prop: AnimatableProp): number => {
       return t?.scaleX ?? 1;
     case 'opacity':
       return t?.opacity ?? 1;
+    case 'rotation':
+      return t?.rotation ?? 0;
   }
 };
 
@@ -79,6 +81,7 @@ export const resolveTransform = (clip: Clip, localTime: number): Transform => {
   if (hasKeyframes(clip, 'x')) resolved.x = evaluateProp(clip, 'x', localTime);
   if (hasKeyframes(clip, 'y')) resolved.y = evaluateProp(clip, 'y', localTime);
   if (hasKeyframes(clip, 'opacity')) resolved.opacity = evaluateProp(clip, 'opacity', localTime);
+  if (hasKeyframes(clip, 'rotation')) resolved.rotation = evaluateProp(clip, 'rotation', localTime);
   if (hasKeyframes(clip, 'scale')) {
     const s = evaluateProp(clip, 'scale', localTime);
     resolved.scaleX = s;
@@ -217,6 +220,52 @@ export const shiftKeyframesForStartTrim = (
   for (const prop of ANIMATABLE_PROPS) {
     const list = keyframes[prop];
     if (list) next[prop] = list.map((k) => ({ ...k, time: round3(k.time - delta) }));
+  }
+  return compact(next);
+};
+
+/**
+ * Moves every keyframe found at `fromTime` (all properties) to `toTime`, clamped to 0..maxTime.
+ * A keyframe already sitting at the target time on the same property is replaced.
+ */
+export const moveKeyframesAtTime = (
+  keyframes: ClipKeyframes | undefined,
+  fromTime: number,
+  toTime: number,
+  maxTime: number
+): ClipKeyframes | undefined => {
+  if (!keyframes) return undefined;
+  const target = round3(Math.min(maxTime, Math.max(0, toTime)));
+
+  const next: ClipKeyframes = {};
+  for (const prop of ANIMATABLE_PROPS) {
+    const list = keyframes[prop];
+    if (!list) continue;
+
+    const moving = list.filter((k) => Math.abs(k.time - fromTime) < KEYFRAME_EPSILON);
+    if (moving.length === 0) {
+      next[prop] = list;
+      continue;
+    }
+
+    const stay = list.filter(
+      (k) => Math.abs(k.time - fromTime) >= KEYFRAME_EPSILON && Math.abs(k.time - target) >= KEYFRAME_EPSILON
+    );
+    next[prop] = [...stay, ...moving.map((k) => ({ ...k, time: target }))].sort((a, b) => a.time - b.time);
+  }
+  return compact(next);
+};
+
+/** Removes every keyframe at the given time (all properties) */
+export const removeKeyframesAtTime = (
+  keyframes: ClipKeyframes | undefined,
+  time: number
+): ClipKeyframes | undefined => {
+  if (!keyframes) return undefined;
+  const next: ClipKeyframes = {};
+  for (const prop of ANIMATABLE_PROPS) {
+    const list = keyframes[prop]?.filter((k) => Math.abs(k.time - time) >= KEYFRAME_EPSILON);
+    if (list && list.length > 0) next[prop] = list;
   }
   return compact(next);
 };

@@ -243,6 +243,141 @@ describe('FFmpegCommandBuilder', () => {
     });
   });
 
+  describe('rotation and text layers', () => {
+    const buildTextTrack = (clipOverrides: Partial<Clip>): Track[] => [
+      {
+        id: 'tt',
+        name: 'Text',
+        type: 'text',
+        isMuted: false,
+        isLocked: false,
+        isHidden: false,
+        clips: [
+          {
+            id: 't1',
+            trackId: 'tt',
+            assetId: 'text-1',
+            name: 'Hello',
+            type: 'text',
+            startTime: 1,
+            duration: 3,
+            inPoint: 0,
+            outPoint: 3,
+            speed: 1,
+            transform: { x: 10, y: 20, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex: 5 },
+            audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+            text: {
+              content: 'Hello',
+              fontFamily: 'Inter',
+              fontSize: 60,
+              color: '#FFFFFF',
+              fontWeight: 'bold',
+              textAlign: 'center',
+            },
+            ...clipOverrides,
+          },
+        ],
+      },
+    ];
+
+    it('rotates a static video clip with a fixed square output and centers it', () => {
+      const tracks = buildVideoTrack({
+        transform: { x: 0, y: 0, scaleX: 0.5, scaleY: 0.5, rotation: 30, opacity: 1, zIndex: 1 },
+      });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain('scale=960:540,rotate=a=\'30*PI/180\':ow=\'ceil(hypot(iw,ih)/2)*2\'');
+      expect(filterComplex).toContain(':c=none');
+      expect(filterComplex).toContain("overlay=x='(W-w)/2+(0)'");
+    });
+
+    it('animates rotation through the keyframe expression (degrees to radians)', () => {
+      const tracks = buildVideoTrack({ keyframes: { rotation: [kf(0, 0), kf(2, 90)] } });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain("rotate=a='(if(lt(t,2),0,");
+      expect(filterComplex).toContain(")*PI/180'");
+    });
+
+    it('rotates before the animated scale when both are animated', () => {
+      const tracks = buildVideoTrack({
+        keyframes: { rotation: [kf(0, 0), kf(2, 90)], scale: [kf(0, 1), kf(2, 0.5)] },
+      });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      const chain = filterComplex.split('; ').find((f) => f.includes('rotate='))!;
+      expect(chain.indexOf('rotate=')).toBeLessThan(chain.indexOf(':eval=frame'));
+      expect(chain).toContain('scale=1920:1080,rotate=');
+    });
+
+    it('keeps plain static text on the direct drawtext path', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildTextTrack({}),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).toContain("drawtext=text='Hello'");
+      expect(filterComplex).toContain('x=(w-text_w)/2+(10)');
+      expect(filterComplex).not.toContain('rotate=');
+      expect(filterComplex).not.toContain('format=rgba');
+    });
+
+    it('anchors left and right aligned text like the preview (canvas center, not 10% margins)', () => {
+      const left = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildTextTrack({ text: { ...buildTextTrack({})[0].clips[0].text!, textAlign: 'left' } }),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(left.filterComplex).toContain('x=w/2+(10)');
+
+      const right = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildTextTrack({ text: { ...buildTextTrack({})[0].clips[0].text!, textAlign: 'right' } }),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(right.filterComplex).toContain('x=w/2-text_w+(10)');
+    });
+
+    it('renders rotated text on a transparent layer instead of drawtext on the canvas', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildTextTrack({ transform: { x: 10, y: 20, scaleX: 1, scaleY: 1, rotation: 15, opacity: 1, zIndex: 5 } }),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).toContain('color=c=black@0.0:s=1920x1080:r=30:d=4.00,format=rgba,drawtext=text=\'Hello\'');
+      expect(filterComplex).toContain("rotate=a='15*PI/180'");
+      expect(filterComplex).toContain("overlay=x='(W-w)/2+(10)':y='(H-h)/2+(20)':enable='between(t,1.00,4.00)'");
+      // text is anchored at the layer center and not offset inside the layer
+      expect(filterComplex).toContain('x=(w-text_w)/2:y=(h-text_h)/2');
+    });
+
+    it('animates text position, scale and opacity with keyframes', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildTextTrack({
+          keyframes: {
+            x: [kf(0, -100), kf(2, 100)],
+            scale: [kf(0, 1), kf(2, 2)],
+            opacity: [kf(0, 0), kf(1, 1)],
+          },
+        }),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).toContain('format=rgba,drawtext=');
+      expect(filterComplex).toContain(':eval=frame');
+      expect(filterComplex).toContain("geq=lum='lum(X,Y)'");
+      expect(filterComplex).toContain("overlay=x='(W-w)/2+(if(lt(t,1),-100,");
+    });
+  });
+
   it('throws error when no media is present', () => {
     const emptyTracks: Track[] = [
       {

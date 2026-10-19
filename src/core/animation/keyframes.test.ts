@@ -11,6 +11,8 @@ import {
   nextKeyframeTime,
   prevKeyframeTime,
   getKeyframeTimes,
+  moveKeyframesAtTime,
+  removeKeyframesAtTime,
 } from './keyframes';
 import { Clip, Keyframe } from '@/types/timeline';
 
@@ -93,6 +95,20 @@ describe('evaluateProp / resolveTransform', () => {
   });
 });
 
+describe('rotation keyframes', () => {
+  it('interpolates rotation and resolves it into the transform', () => {
+    const clip = mockClip({ keyframes: { rotation: [kf(0, 0), kf(2, 90)] } });
+    expect(evaluateProp(clip, 'rotation', 1)).toBeCloseTo(45);
+    expect(resolveTransform(clip, 1).rotation).toBeCloseTo(45);
+    expect(resolveTransform(clip, 1).scaleX).toBe(1.5); // untouched
+  });
+
+  it('falls back to the static rotation', () => {
+    const clip = mockClip({ transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 30, opacity: 1, zIndex: 1 } });
+    expect(evaluateProp(clip, 'rotation', 1)).toBe(30);
+  });
+});
+
 describe('upsert / remove / navigation', () => {
   it('inserts keyframes sorted by time', () => {
     let kfs = upsertKeyframe(undefined, 'x', 2, 200);
@@ -165,5 +181,36 @@ describe('shiftKeyframesForStartTrim', () => {
   it('extending the clip earlier pushes keyframes later', () => {
     const shifted = shiftKeyframesForStartTrim({ opacity: [kf(1, 0.2), kf(2, 1)] }, -0.5);
     expect(shifted!.opacity!.map((k) => k.time)).toEqual([1.5, 2.5]);
+  });
+});
+
+describe('moveKeyframesAtTime / removeKeyframesAtTime', () => {
+  it('moves keyframes of every property at that time and keeps the list sorted', () => {
+    const keyframes = { x: [kf(0, 0), kf(1, 10)], opacity: [kf(1, 0.5), kf(3, 1)] };
+    const moved = moveKeyframesAtTime(keyframes, 1, 2, 4)!;
+    expect(moved.x!.map((k) => k.time)).toEqual([0, 2]);
+    expect(moved.opacity!.map((k) => k.time)).toEqual([2, 3]);
+    expect(moved.x![1].value).toBe(10);
+  });
+
+  it('clamps the target to the clip duration and to zero', () => {
+    const keyframes = { x: [kf(1, 10)] };
+    expect(moveKeyframesAtTime(keyframes, 1, 9, 4)!.x![0].time).toBe(4);
+    expect(moveKeyframesAtTime(keyframes, 1, -3, 4)!.x![0].time).toBe(0);
+  });
+
+  it('replaces a keyframe of the same property that already sits at the target time', () => {
+    const keyframes = { x: [kf(1, 10), kf(2, 20)] };
+    const moved = moveKeyframesAtTime(keyframes, 1, 2, 4)!;
+    expect(moved.x).toHaveLength(1);
+    expect(moved.x![0]).toMatchObject({ time: 2, value: 10 });
+  });
+
+  it('removes keyframes at a time and drops empty properties', () => {
+    const keyframes = { x: [kf(1, 10)], y: [kf(1, 5), kf(2, 6)] };
+    const result = removeKeyframesAtTime(keyframes, 1)!;
+    expect(result.x).toBeUndefined();
+    expect(result.y!.map((k) => k.time)).toEqual([2]);
+    expect(removeKeyframesAtTime({ x: [kf(1, 10)] }, 1)).toBeUndefined();
   });
 });

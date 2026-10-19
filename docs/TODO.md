@@ -81,11 +81,25 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Export: hız (`setpts` + `atempo` zinciri), animasyonlu konum (`overlay` ifadesi), ölçek (`scale eval=frame`) ve opaklık (`geq`)
 - [x] Export konum hatası düzeltildi: ölçeği 1 olmayan klip artık preview gibi merkezden konumlanır
 - [x] Timeline kırpma tutamaçları `speed` çarpanını dikkate alır
-- [ ] Rotation keyframe + export (`rotate` filtresi)
-- [ ] Keyframe'i timeline'da sürükleyerek taşıma, keyframe başına easing seçici UI
+- [x] Rotation keyframe + export: `rotate` filtresi (sabit kare çıkış, saydam köşeler), animasyonlu açı; döndürme + animasyonlu ölçek birlikte çalışır
+- [x] Animasyonlu/döndürülmüş metin export'u: metin saydam bir katmana çizilir ve video klipleriyle aynı hattan geçer (konum, ölçek, döndürme, opaklık keyframe'leri)
+- [x] Export: sola/sağa hizalı metin artık preview gibi tuval merkezine çapalanır (eskiden %10 kenar boşluğu kullanılıyordu)
+- [x] Keyframe'i timeline'da sürükleyerek taşıma, tıklayınca seçme + playhead'i götürme, Delete ile silme; keyframe başına easing düğmesi (doğrusal / yumuşak)
 - [x] Preview üzerinde seçili klibi (video veya metin) fareyle sürükleyerek konumlandırma: Inspector X/Y canlı güncellenir, canvas merkezine yapışır (Alt = serbest), keyframe varsa auto-key
-- [ ] Preview üzerinde köşe tutamaçlarıyla ölçekleme ve döndürme
+- [x] Preview üzerinde köşe tutamaçlarıyla ölçekleme, üstteki yuvarlak tutamaçla döndürme (Shift = 15° adım); tutamaçlar tuval içinde kalır, keyframe'li özellikte auto-key
 - [ ] Hız eğrisi (ramp), ters oynatma
+
+---
+
+## 💾 Faz 6: Proje Kaydet/Aç, Otomatik Kayıt ve Timeline Kalitesi
+- [x] Proje dosyası (`.kurgu.json`, sürümlü): kaydet (Ctrl+S), farklı kaydet (Ctrl+Shift+S), aç (Ctrl+O). File System Access API, yoksa indirme/`input` yedeği (`src/core/project/`)
+- [x] Otomatik kayıt (localStorage, 1.5 sn gecikmeli) ve açılışta "Geri Yükle / Yoksay" bandı; boş proje gerçek yedeğin üstüne yazılmaz
+- [x] Açılan projede bulunamayan medya (blob olarak içe aktarılmış) uyarılır
+- [x] Klip üzerinde film şeridi küçük resimleri (video) ve ses dalga formu (ses), kırpma ve hıza göre kesilir (`src/core/media/mediaCache.ts`)
+- [x] Çoklu seçim (Ctrl/Shift + tık), kopyala/kes/yapıştır (Ctrl+C/X/V), çoğalt (Ctrl+D), ripple silme (Shift+Delete)
+- [ ] Çoklu seçilen kliplerin birlikte sürüklenmesi/kırpılması
+- [ ] Tauri'de yerel kaydet/aç diyalogları (WebView2'de File System Access API denenmedi; gerekirse Rust komutu)
+- [ ] Timeline zoom'unu içeriğe sığdır, sürükle-bırak ile medya havuzundan yerleştirme iyileştirmeleri
 - [x] Undo/Redo gerçekten bağlandı (`src/core/command/timelineHistory.ts`): timeline `tracks` değişimleri otomatik kaydedilir, sürükleme/slider düzenlemeleri tek adımda birleşir, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z ve Header butonları çalışır
 
 ---

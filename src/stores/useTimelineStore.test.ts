@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useTimelineStore } from './useTimelineStore';
+import { useTimelineStore, clearClipboard } from './useTimelineStore';
 import { Clip, Track } from '@/types/timeline';
 
 const makeClip = (id: string, startTime: number, duration: number, overrides: Partial<Clip> = {}): Clip => ({
@@ -158,9 +158,150 @@ describe('useTimelineStore - keyframes', () => {
     expect(xs[xs.length - 1]).toMatchObject({ time: 2, value: 100 });
   });
 
+  it('moveKeyframes retimes every property at that time', () => {
+    useTimelineStore.setState({ currentTime: 3 });
+    useTimelineStore.getState().toggleKeyframe('a', 'x'); // local 1
+    useTimelineStore.getState().toggleKeyframe('a', 'opacity');
+    useTimelineStore.getState().moveKeyframes('a', 1, 2.5);
+    const clip = getClip('a');
+    expect(clip.keyframes!.x![0].time).toBe(2.5);
+    expect(clip.keyframes!.opacity![0].time).toBe(2.5);
+  });
+
+  it('removeKeyframesAt bakes the value of properties that lose their last keyframe', () => {
+    useTimelineStore.setState({ currentTime: 2 });
+    useTimelineStore.getState().toggleKeyframe('a', 'x'); // local 0
+    useTimelineStore.setState({ currentTime: 4 });
+    useTimelineStore.getState().updateClipTransform('a', { x: 80 }); // local 2
+    useTimelineStore.setState({ selectedKeyframeTime: 2 });
+
+    useTimelineStore.getState().removeKeyframesAt('a', 2);
+    let clip = getClip('a');
+    expect(clip.keyframes!.x).toHaveLength(1);
+    expect(useTimelineStore.getState().selectedKeyframeTime).toBeNull();
+
+    useTimelineStore.getState().removeKeyframesAt('a', 0);
+    clip = getClip('a');
+    expect(clip.keyframes).toBeUndefined();
+    expect(clip.transform.x).toBe(0); // value of the last removed keyframe
+  });
+
+  it('a keyframe selection is dropped when another clip is selected', () => {
+    useTimelineStore.setState({ selectedClipId: 'a', selectedKeyframeTime: 1 });
+    useTimelineStore.getState().setSelectedClipId('a');
+    expect(useTimelineStore.getState().selectedKeyframeTime).toBe(1);
+    useTimelineStore.getState().setSelectedClipId('b');
+    expect(useTimelineStore.getState().selectedKeyframeTime).toBeNull();
+  });
+
   it('inspector reset keeps outPoint consistent with duration * speed', () => {
     setTracks([makeClip('a', 0, 4, { inPoint: 3, outPoint: 7 })]);
     useTimelineStore.getState().updateClipTiming('a', 0, 4, 0);
     expect(getClip('a').outPoint).toBe(4);
+  });
+});
+
+describe('useTimelineStore - multi-select, clipboard, ripple delete', () => {
+  const ids = () => clips().map((c) => c.id).sort();
+  const clips = (): Clip[] => useTimelineStore.getState().tracks.flatMap((t) => t.clips);
+
+  beforeEach(() => {
+    clearClipboard();
+    setTracks([makeClip('a', 0, 2), makeClip('b', 2, 2), makeClip('c', 4, 2), makeClip('d', 8, 1)]);
+  });
+
+  it('toggles clips in and out of the selection; the last clicked is primary', () => {
+    const s = useTimelineStore.getState();
+    s.setSelectedClipId('a');
+    s.toggleClipSelection('b');
+    expect(useTimelineStore.getState().getSelectedClipIds()).toEqual(['a', 'b']);
+    expect(useTimelineStore.getState().selectedClipId).toBe('b');
+
+    useTimelineStore.getState().toggleClipSelection('a');
+    expect(useTimelineStore.getState().getSelectedClipIds()).toEqual(['b']);
+
+    useTimelineStore.getState().toggleClipSelection('b');
+    expect(useTimelineStore.getState().selectedClipId).toBeNull();
+
+    useTimelineStore.getState().setSelectedClipId('c');
+    expect(useTimelineStore.getState().extraSelectedIds).toEqual([]);
+  });
+
+  it('deletes every selected clip', () => {
+    useTimelineStore.getState().setSelectedClipId('a');
+    useTimelineStore.getState().toggleClipSelection('c');
+    expect(useTimelineStore.getState().removeSelectedClips()).toBe(2);
+    expect(ids()).toEqual(['b', 'd']);
+    expect(getClip('b')!.startTime).toBe(2); // no ripple
+    expect(useTimelineStore.getState().getSelectedClipIds()).toEqual([]);
+  });
+
+  it('ripple delete closes the gaps left by the deleted clips', () => {
+    useTimelineStore.getState().setSelectedClipId('a');
+    useTimelineStore.getState().toggleClipSelection('c');
+    useTimelineStore.getState().removeSelectedClips(true);
+
+    expect(getClip('b')!.startTime).toBe(0); // a (2s) was before it
+    expect(getClip('d')!.startTime).toBe(4); // a and c (2s each) were before it
+  });
+
+  it('copy and paste place the clips at the playhead keeping their relative offsets', () => {
+    const s = useTimelineStore.getState();
+    s.setSelectedClipId('a');
+    s.toggleClipSelection('b'); // a: 0-2, b: 2-4
+    expect(useTimelineStore.getState().copySelectedClips()).toBe(2);
+
+    useTimelineStore.setState({ currentTime: 20 });
+    expect(useTimelineStore.getState().pasteClips()).toBe(2);
+
+    const pasted = clips().filter((c) => !['a', 'b', 'c', 'd'].includes(c.id)).sort((x, y) => x.startTime - y.startTime);
+    expect(pasted.map((c) => c.startTime)).toEqual([20, 22]);
+    expect(pasted.map((c) => c.duration)).toEqual([2, 2]);
+    expect(useTimelineStore.getState().getSelectedClipIds().sort()).toEqual(pasted.map((c) => c.id).sort());
+    // the originals are untouched and the pasted clips are independent copies
+    expect(getClip('a')!.startTime).toBe(0);
+    expect(new Set(clips().map((c) => c.id)).size).toBe(6);
+  });
+
+  it('pasting onto an occupied spot moves the clip to a new lane instead of overlapping', () => {
+    useTimelineStore.getState().setSelectedClipId('a');
+    useTimelineStore.getState().copySelectedClips();
+    useTimelineStore.setState({ currentTime: 0 }); // right on top of the original
+    useTimelineStore.getState().pasteClips();
+
+    const tracks = useTimelineStore.getState().tracks;
+    expect(tracks.length).toBe(2);
+    expect(tracks.every((t) => t.clips.every((c, i, arr) => i === 0 || arr[i - 1].startTime + arr[i - 1].duration <= c.startTime + 0.001))).toBe(true);
+  });
+
+  it('duplicate puts the copy right after the selection', () => {
+    useTimelineStore.getState().setSelectedClipId('a');
+    useTimelineStore.getState().toggleClipSelection('b'); // selection ends at 4, c starts at 4 on the same track
+    expect(useTimelineStore.getState().duplicateSelectedClips()).toBe(2);
+
+    const copies = clips().filter((c) => !['a', 'b', 'c', 'd'].includes(c.id)).sort((x, y) => x.startTime - y.startTime);
+    expect(copies.map((c) => c.startTime)).toEqual([4, 6]); // pushed to a free lane because c sits at 4-6 on V1
+    expect(copies.every((c) => c.trackId !== 'track-v1' || c.startTime >= 6)).toBe(true);
+  });
+
+  it('paste does nothing with an empty clipboard', () => {
+    expect(useTimelineStore.getState().pasteClips()).toBe(0);
+    expect(ids()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('undo restores a ripple delete as one step and drops stale selections', async () => {
+    const { initTimelineHistory } = await import('@/core/command/timelineHistory');
+    const { commandManager } = await import('@/core/command/commandManager');
+    commandManager.clear();
+    const stop = initTimelineHistory();
+
+    useTimelineStore.getState().setSelectedClipId('a');
+    useTimelineStore.getState().toggleClipSelection('c');
+    useTimelineStore.getState().removeSelectedClips(true);
+    commandManager.undo();
+
+    expect(ids()).toEqual(['a', 'b', 'c', 'd']);
+    expect(getClip('d')!.startTime).toBe(8);
+    stop();
   });
 });

@@ -4,6 +4,8 @@ import { ProjectSettings } from '@/types/project';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import { Logger } from '@/core/logger';
 import { resolveTransform } from '@/core/animation/keyframes';
+import { previewVolume } from '@/core/audio/fades';
+import { canvasFilter } from '@/core/color/colorGrading';
 
 export type TimeUpdateListener = (time: number) => void;
 
@@ -407,7 +409,7 @@ export class PreviewEngine {
       const mediaTime = Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
       const track = this.currentTracks.find((t) => t.id === clip.trackId);
       const isMuted = track?.isMuted || clip.audio?.muted || false;
-      const volume = isMuted ? 0 : Math.min(1, Math.max(0, clip.audio?.volume ?? 1));
+      const volume = previewVolume(clip.audio, track?.isMuted ?? false, this.currentTime - clip.startTime, clip.duration);
 
       if (clip.type === 'video') {
         const video = this.getOrCreateVideoElement(asset);
@@ -527,7 +529,7 @@ export class PreviewEngine {
       const mediaTime = Math.max(0, clip.inPoint + (this.currentTime - clip.startTime) * clip.speed);
       const track = this.currentTracks.find((t) => t.id === clip.trackId);
       const isMuted = track?.isMuted || clip.audio?.muted || false;
-      const volume = isMuted ? 0 : Math.min(1, Math.max(0, clip.audio?.volume ?? 1));
+      const volume = previewVolume(clip.audio, track?.isMuted ?? false, this.currentTime - clip.startTime, clip.duration);
 
       const isNewlyActivated = !this.previousActiveClipIds.has(clip.id);
 
@@ -687,6 +689,7 @@ export class PreviewEngine {
       this.ctx.scale(scaleX, scaleY);
 
       if (video.videoWidth > 0 && video.videoHeight > 0) {
+        this.ctx.filter = canvasFilter(clip.colorGrading); // restored by ctx.restore() below
         this.ctx.drawImage(video, -width / 2, -height / 2, width, height);
       }
       this.ctx.restore();

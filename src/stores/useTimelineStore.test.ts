@@ -305,3 +305,29 @@ describe('useTimelineStore - multi-select, clipboard, ripple delete', () => {
     stop();
   });
 });
+
+describe('useTimelineStore - color adjustment', () => {
+  beforeEach(() => setTracks([makeClip('a', 0, 4), { ...makeClip('t', 0, 2), type: 'text' }]));
+
+  it('stores a partial update on top of the neutral values', () => {
+    useTimelineStore.getState().updateClipColor('a', { saturation: 0 });
+    expect(getClip('a')!.colorGrading).toEqual({ brightness: 0, contrast: 1, saturation: 0 });
+  });
+
+  it('clamps and merges successive edits', () => {
+    useTimelineStore.getState().updateClipColor('a', { brightness: 9 });
+    useTimelineStore.getState().updateClipColor('a', { contrast: 1.5 });
+    expect(getClip('a')!.colorGrading).toEqual({ brightness: 1, contrast: 1.5, saturation: 1 });
+  });
+
+  it('removes the grading when every value returns to neutral', () => {
+    useTimelineStore.getState().updateClipColor('a', { contrast: 1.4 });
+    useTimelineStore.getState().updateClipColor('a', { contrast: 1 });
+    expect(getClip('a')!.colorGrading).toBeUndefined();
+  });
+
+  it('ignores text clips', () => {
+    useTimelineStore.getState().updateClipColor('t', { contrast: 1.4 });
+    expect(getClip('t')!.colorGrading).toBeUndefined();
+  });
+});

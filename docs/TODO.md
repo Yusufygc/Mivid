@@ -97,6 +97,8 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Açılan projede bulunamayan medya (blob olarak içe aktarılmış) uyarılır
 - [x] Klip üzerinde film şeridi küçük resimleri (video) ve ses dalga formu (ses), kırpma ve hıza göre kesilir (`src/core/media/mediaCache.ts`)
 - [x] Çoklu seçim (Ctrl/Shift + tık), kopyala/kes/yapıştır (Ctrl+C/X/V), çoğalt (Ctrl+D), ripple silme (Shift+Delete)
+- [x] Ses fade in/out (Inspector slider'ları, preview ve export `afade`) ve gürültü azaltma (export `afftdn`, preview'da duyulmaz) (`src/core/audio/fades.ts`)
+- [x] Renk ayarı: parlaklık / kontrast / doygunluk + hazır ayarlar (Canlı, Parlak, Sinematik, Soluk, Siyah-Beyaz). Preview canvas `filter`, export `eq`. Parlaklık preview'da çarpımsal, export'ta toplamsal olduğu için yaklaşık eşleşir (`src/core/color/colorGrading.ts`)
 - [ ] Çoklu seçilen kliplerin birlikte sürüklenmesi/kırpılması
 - [ ] Tauri'de yerel kaydet/aç diyalogları (WebView2'de File System Access API denenmedi; gerekirse Rust komutu)
 - [ ] Timeline zoom'unu içeriğe sığdır, sürükle-bırak ile medya havuzundan yerleştirme iyileştirmeleri

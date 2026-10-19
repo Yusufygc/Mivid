@@ -1,5 +1,7 @@
 import { Clip, Keyframe, Track } from '@/types/timeline';
 import { hasKeyframes } from '@/core/animation/keyframes';
+import { buildFadeFilters } from '@/core/audio/fades';
+import { ffmpegEqFilter } from '@/core/color/colorGrading';
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { Logger } from '@/core/logger';
@@ -160,6 +162,10 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
   const endTime = endTimeNum.toFixed(2);
 
   let clipFilters = source;
+
+  // Color adjustment (video and image clips; text has no footage to grade)
+  const eqFilter = clip.type === 'text' ? '' : ffmpegEqFilter(clip.colorGrading);
+  if (eqFilter) clipFilters += `,${eqFilter}`;
 
   // Opacity
   const opacityKeyframes = clip.keyframes?.opacity;
@@ -426,7 +432,7 @@ export class FFmpegCommandBuilder {
         const audioSpeed = clip.speed || 1;
         const audioSourceSpan = clip.duration * audioSpeed;
         filterGraph.push(
-          `[${inputIdx}:a]atrim=start=${clip.inPoint.toFixed(2)}:duration=${audioSourceSpan.toFixed(2)},asetpts=PTS-STARTPTS,${buildAtempoChain(audioSpeed)}volume=${vol.toFixed(2)}[${audioTag}]`
+          `[${inputIdx}:a]atrim=start=${clip.inPoint.toFixed(2)}:duration=${audioSourceSpan.toFixed(2)},asetpts=PTS-STARTPTS,${buildAtempoChain(audioSpeed)}${clip.audio?.denoise ? 'afftdn=nr=12,' : ''}${buildFadeFilters(clip.audio, clip.duration)}volume=${vol.toFixed(2)}[${audioTag}]`
         );
         filterGraph.push(`[${audioTag}]adelay=${delayMs}|${delayMs}[${delayedTag}]`);
 

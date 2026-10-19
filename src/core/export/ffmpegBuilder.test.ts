@@ -243,6 +243,57 @@ describe('FFmpegCommandBuilder', () => {
     });
   });
 
+  describe('color adjustment', () => {
+    it('adds the eq filter right after the source and before opacity', () => {
+      const tracks = buildVideoTrack({
+        colorGrading: { brightness: 0.1, contrast: 1.2, saturation: 0.8 },
+        transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 0.5, zIndex: 1 },
+      });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain(
+        'format=yuva420p,eq=brightness=0.100:contrast=1.200:saturation=0.800,colorchannelmixer=aa=0.50'
+      );
+    });
+
+    it('adds nothing for a neutral clip', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildVideoTrack({}),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).not.toContain('eq=');
+    });
+  });
+
+  describe('audio fades and denoise', () => {
+    it('adds afade and afftdn before the volume filter', () => {
+      const tracks = buildVideoTrack({
+        audio: { volume: 0.5, muted: false, fadeIn: 1, fadeOut: 2, denoise: true },
+      });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(mockProject, tracks, mockAssets, {
+        outputPath: 'out.mp4',
+      });
+      expect(filterComplex).toContain(
+        'asetpts=PTS-STARTPTS,afftdn=nr=12,afade=t=in:st=0:d=1.00,afade=t=out:st=3.00:d=2.00,volume=0.50'
+      );
+    });
+
+    it('leaves audio untouched without fades or denoise', () => {
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        buildVideoTrack({}),
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).toContain('asetpts=PTS-STARTPTS,volume=1.00');
+      expect(filterComplex).not.toContain('afade');
+      expect(filterComplex).not.toContain('afftdn');
+    });
+  });
+
   describe('rotation and text layers', () => {
     const buildTextTrack = (clipOverrides: Partial<Clip>): Track[] => [
       {

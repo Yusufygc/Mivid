@@ -17,6 +17,7 @@ export interface AudioSettings {
   muted: boolean;
   fadeIn: number; // seconds
   fadeOut: number; // seconds
+  denoise?: boolean; // FFmpeg afftdn on export (not previewed)
 }
 
 export interface TextStroke {

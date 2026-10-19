@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { Track, Clip, Transform, AudioSettings, TextProperties, AnimatableProp, Easing } from '@/types/timeline';
+import { Track, Clip, Transform, AudioSettings, TextProperties, AnimatableProp, Easing, ColorGrading } from '@/types/timeline';
+import { NEUTRAL_GRADING, clampGrading, isNeutralGrading } from '@/core/color/colorGrading';
 import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
 import {
@@ -74,6 +75,8 @@ interface TimelineStoreState {
   /** Removes all keyframes at a clip-local time; properties left without keyframes keep their last value */
   removeKeyframesAt: (clipId: string, time: number) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
+  /** Updates the color adjustment; a neutral result removes it from the clip */
+  updateClipColor: (clipId: string, grading: Partial<ColorGrading>) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
   addTransition: (clipId: string, position: 'in' | 'out', transitionType: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe') => void;
@@ -794,6 +797,19 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       tracks: state.tracks.map((t) => ({
         ...t,
         clips: t.clips.map((c) => (c.id === clipId ? { ...c, audio: { ...c.audio, ...audioUpdates } } : c)),
+      })),
+    }));
+  },
+
+  updateClipColor: (clipId, gradingUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId || c.type === 'text' || c.type === 'audio') return c;
+          const next = clampGrading({ ...NEUTRAL_GRADING, ...c.colorGrading, ...gradingUpdates });
+          return { ...c, colorGrading: isNeutralGrading(next) ? undefined : next };
+        }),
       })),
     }));
   },

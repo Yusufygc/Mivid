@@ -1,9 +1,11 @@
 import React from 'react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge } from 'lucide-react';
+import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge, Palette } from 'lucide-react';
 import { TextInspector } from './TextInspector';
 import { KeyframeControls } from './KeyframeControls';
 import { evaluateProp } from '@/core/animation/keyframes';
+import { maxFade } from '@/core/audio/fades';
+import { COLOR_PRESETS, GRADING_LIMITS, NEUTRAL_GRADING, isNeutralGrading } from '@/core/color/colorGrading';
 import { MAX_CLIP_SPEED, MIN_CLIP_SPEED } from '@/stores/useTimelineStore';
 
 const SPEED_PRESETS = [0.25, 0.5, 1, 1.5, 2, 4];
@@ -15,6 +17,7 @@ export const Inspector: React.FC = () => {
     currentTime,
     updateClipTransform,
     updateClipAudio,
+    updateClipColor,
     updateClipTiming,
     setClipSpeed,
   } = useTimelineStore();
@@ -249,6 +252,76 @@ export const Inspector: React.FC = () => {
           </div>
         )}
 
+        {/* Color adjustment (video & image clips) */}
+        {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+          <div className="space-y-3 pt-2 border-t border-surface-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+                <Palette className="w-3.5 h-3.5 text-pink-400" />
+                <span>Renk Ayarı (Color)</span>
+              </div>
+              {!isNeutralGrading(selectedClip.colorGrading) && (
+                <button
+                  onClick={() => updateClipColor(selectedClip.id, NEUTRAL_GRADING)}
+                  className="text-[10px] text-rose-400 hover:text-rose-300"
+                >
+                  Sıfırla
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {COLOR_PRESETS.map((preset) => {
+                const current = selectedClip.colorGrading ?? NEUTRAL_GRADING;
+                const isActive =
+                  Math.abs(current.brightness - preset.grading.brightness) < 0.001 &&
+                  Math.abs(current.contrast - preset.grading.contrast) < 0.001 &&
+                  Math.abs(current.saturation - preset.grading.saturation) < 0.001;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => updateClipColor(selectedClip.id, preset.grading)}
+                    className={`py-1 rounded text-[10px] font-medium transition-all ${
+                      isActive
+                        ? 'bg-pink-500 text-white font-semibold'
+                        : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(
+              [
+                { key: 'brightness', label: 'Parlaklık' },
+                { key: 'contrast', label: 'Kontrast' },
+                { key: 'saturation', label: 'Doygunluk' },
+              ] as const
+            ).map(({ key, label }) => {
+              const value = (selectedClip.colorGrading ?? NEUTRAL_GRADING)[key];
+              return (
+                <div key={key} className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>{label}</span>
+                    <span className="font-mono text-gray-200">{value.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={GRADING_LIMITS[key].min}
+                    max={GRADING_LIMITS[key].max}
+                    step={0.01}
+                    value={value}
+                    onChange={(e) => updateClipColor(selectedClip.id, { [key]: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-pink-400"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Transitions Settings (for video & overlay clips) */}
         {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && (
           <div className="space-y-4 pt-2 border-t border-surface-border">
@@ -377,6 +450,30 @@ export const Inspector: React.FC = () => {
               />
             </div>
 
+            {/* Fades: they can never overlap, so each one is limited by the other */}
+            {(['fadeIn', 'fadeOut'] as const).map((key) => {
+              const other = key === 'fadeIn' ? audio?.fadeOut ?? 0 : audio?.fadeIn ?? 0;
+              const max = Math.min(10, maxFade(selectedClip.duration, other));
+              const value = audio?.[key] ?? 0;
+              return (
+                <div key={key} className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>{key === 'fadeIn' ? 'Ses Yükselme (Fade In)' : 'Ses Alçalma (Fade Out)'}</span>
+                    <span className="font-mono text-gray-200">{value.toFixed(1)}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={max}
+                    step="0.1"
+                    value={Math.min(value, max)}
+                    onChange={(e) => updateClipAudio(selectedClip.id, { [key]: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                  />
+                </div>
+              );
+            })}
+
             <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
               <input
                 type="checkbox"
@@ -385,6 +482,16 @@ export const Inspector: React.FC = () => {
                 className="rounded bg-surface-light border-surface-border text-primary focus:ring-0"
               />
               <span>Sesi Tamamen Kapat (Mute)</span>
+            </label>
+
+            <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer" title="FFmpeg afftdn: yalnızca dışa aktarmada uygulanır">
+              <input
+                type="checkbox"
+                checked={audio?.denoise ?? false}
+                onChange={(e) => updateClipAudio(selectedClip.id, { denoise: e.target.checked })}
+                className="rounded bg-surface-light border-surface-border text-primary focus:ring-0"
+              />
+              <span>Gürültü Azalt (dışa aktarmada)</span>
             </label>
           </div>
         )}

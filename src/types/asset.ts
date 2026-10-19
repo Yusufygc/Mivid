@@ -1,4 +1,4 @@
-export type AssetType = 'video' | 'audio' | 'image' | 'text';
+export type AssetType = 'video' | 'audio' | 'image' | 'text' | 'effect';
 
 export interface MediaAsset {
   id: string;

@@ -2,6 +2,8 @@ import { Clip, Keyframe, Track } from '@/types/timeline';
 import { hasKeyframes } from '@/core/animation/keyframes';
 import { buildFadeFilters } from '@/core/audio/fades';
 import { ffmpegEqFilter } from '@/core/color/colorGrading';
+import { backdropSigmaPx, blurSigmaPx, featherSigmaPx, pixelBlockPx } from '@/core/effects/regionEffects';
+import { ffmpegFitFilter } from '@/core/layout/fit';
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { Logger } from '@/core/logger';
@@ -162,6 +164,38 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
   const endTime = endTimeNum.toFixed(2);
 
   let clipFilters = source;
+  let underBase = baseLabel;
+
+  // Blurred backdrop: a cover-fitted, blurred copy of the footage fills the frame behind the clip
+  if (clip.type !== 'text' && (clip.backdropBlur ?? 0) > 0) {
+    const sourceTag = `clip_src_${index}`;
+    const backdropSource = `clip_bg_src_${index}`;
+    const backdropTag = `clip_bg_${index}`;
+    const backdropOut = `clip_bg_out_${index}`;
+    const grow = 1.15; // hides the soft edge a blur leaves at the borders
+    const sigma = backdropSigmaPx(clip.backdropBlur!, project.height);
+
+    filterGraph.push(`${source},split=2[${sourceTag}][${backdropSource}]`);
+
+    let backdropFilters =
+      `[${backdropSource}]scale=${Math.round(project.width * grow)}:${Math.round(project.height * grow)}:force_original_aspect_ratio=increase,` +
+      `crop=${project.width}:${project.height},gblur=sigma=${formatNumber(sigma)}:steps=2,format=yuva420p`;
+    const backdropOpacity = clip.transform?.opacity ?? 1;
+    if (backdropOpacity < 1) backdropFilters += `,colorchannelmixer=aa=${backdropOpacity.toFixed(2)}`;
+    if (clip.transitionIn && (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black')) {
+      backdropFilters += `,fade=t=in:st=${startTime}:d=${clip.transitionIn.duration.toFixed(2)}:alpha=1`;
+    }
+    if (clip.transitionOut && (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black')) {
+      const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
+      backdropFilters += `,fade=t=out:st=${outStart}:d=${clip.transitionOut.duration.toFixed(2)}:alpha=1`;
+    }
+    filterGraph.push(`${backdropFilters}[${backdropTag}]`);
+    filterGraph.push(
+      `[${underBase}][${backdropTag}]overlay=enable='between(t,${startTime},${endTime})'[${backdropOut}]`
+    );
+    underBase = backdropOut;
+    clipFilters = `[${sourceTag}]null`;
+  }
 
   // Color adjustment (video and image clips; text has no footage to grade)
   const eqFilter = clip.type === 'text' ? '' : ffmpegEqFilter(clip.colorGrading);
@@ -213,18 +247,31 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
     return `scale=w='${evenSize(baseW)}':h='${evenSize(baseH)}':eval=frame`;
   };
 
+  // Fitted or covering footage is brought to the frame size first (letterbox bars stay transparent),
+  // then scaled and rotated like any other layer. Stretched footage keeps the original single scale step.
+  const fitted = clip.type !== 'text' && !!clip.fit && clip.fit !== 'stretch';
+  const fitFilter = ffmpegFitFilter(clip.fit, project.width, project.height);
+
   if (scaleAnimated && rotated) {
     // Rotate at full size first (rotate cannot follow a changing frame size), then scale the rotated frame.
     // Equivalent to scale-then-rotate because animated scale is uniform.
+    const toFrame = fitted ? fitFilter : `scale=${project.width}:${project.height}`;
     filterGraph.push(
-      `[${clipTag}]scale=${project.width}:${project.height},${rotateFilter()},${animatedScaleFilter('iw', 'ih')}[${scaledTag}]`
+      `[${clipTag}]${toFrame},${rotateFilter()},${animatedScaleFilter('iw', 'ih')}[${scaledTag}]`
     );
   } else if (scaleAnimated) {
-    filterGraph.push(`[${clipTag}]${animatedScaleFilter(String(project.width), String(project.height))}[${scaledTag}]`);
+    filterGraph.push(
+      fitted
+        ? `[${clipTag}]${fitFilter},${animatedScaleFilter('iw', 'ih')}[${scaledTag}]`
+        : `[${clipTag}]${animatedScaleFilter(String(project.width), String(project.height))}[${scaledTag}]`
+    );
   } else {
     const scaleW = Math.round(project.width * staticScaleX);
     const scaleH = Math.round(project.height * staticScaleY);
-    filterGraph.push(`[${clipTag}]scale=${scaleW}:${scaleH}${rotated ? `,${rotateFilter()}` : ''}[${scaledTag}]`);
+    const resize = fitted
+      ? `${fitFilter}${scaleW !== project.width || scaleH !== project.height ? `,scale=${scaleW}:${scaleH}` : ''}`
+      : `scale=${scaleW}:${scaleH}`;
+    filterGraph.push(`[${clipTag}]${resize}${rotated ? `,${rotateFilter()}` : ''}[${scaledTag}]`);
   }
 
   // Position: offset from the canvas center, same as the preview. Scaled or rotated frames are centered first.
@@ -266,10 +313,119 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
   const yUsesExpression = needsCentering || hasContent(clip.keyframes?.y);
 
   filterGraph.push(
-    `[${baseLabel}][${scaledTag}]overlay=x=${quote(xExpr, usesExpression)}:y=${quote(yExpr, yUsesExpression)}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
+    `[${underBase}][${scaledTag}]overlay=x=${quote(xExpr, usesExpression)}:y=${quote(yExpr, yUsesExpression)}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
   );
 
   return nextBase;
+};
+
+interface RegionEffectParams {
+  project: ProjectSettings;
+  filterGraph: string[];
+  clip: Clip;
+  index: number;
+  baseLabel: string;
+}
+
+/**
+ * Filter chain for the region mask: a white shape on black, softened by a gaussian when the effect has a feather.
+ * The shape is drawn once on a single frame and looped, so only the (cheap) scale and overlay run per frame.
+ * Returns the label of a project-sized luma stream that starts at 0 and lasts for the clip.
+ */
+const pushRegionMask = ({ project, filterGraph, clip, index }: RegionEffectParams): string => {
+  const effect = clip.effect!;
+  const { width: W, height: H, fps } = project;
+  const frame = 1 / fps;
+  const duration = clip.duration;
+
+  const baseW = Math.max(2, Math.round(effect.width));
+  const baseH = Math.max(2, Math.round(effect.height));
+  const sigma = featherSigmaPx(effect.feather, effect.width, effect.height);
+  const margin = sigma > 0.1 ? Math.ceil(sigma * 3) : 0;
+  const paddedW = baseW + margin * 2;
+  const paddedH = baseH + margin * 2;
+
+  // 1. The shape on a single frame
+  let shape = `color=c=white:s=${baseW}x${baseH}:r=${fps}:d=${frame.toFixed(5)},format=gray`;
+  if (effect.shape === 'ellipse') {
+    shape += `,geq=lum='if(lte(hypot((X+0.5-W/2)/(W/2),(Y+0.5-H/2)/(H/2)),1),255,0)'`;
+  }
+  if (margin > 0) {
+    shape += `,pad=${paddedW}:${paddedH}:${margin}:${margin}:color=black,gblur=sigma=${formatNumber(sigma)}`;
+  }
+  // 2. Repeat the frame for the whole clip
+  shape += `,loop=loop=-1:size=1:start=0,setpts=N/(${fps}*TB),trim=duration=${duration.toFixed(3)},format=yuv420p`;
+
+  // 3. Scale (keyframes or static, per axis)
+  const scaleKeyframes = clip.keyframes?.scale;
+  const scaleX = clip.transform?.scaleX ?? 1;
+  const scaleY = clip.transform?.scaleY ?? 1;
+  if (hasContent(scaleKeyframes)) {
+    const expr = buildKeyframeExpr(scaleKeyframes, 0, 't');
+    const even = (size: number) => `max(2,trunc(${size}*(${expr})/2)*2)`;
+    shape += `,scale=w='${even(paddedW)}':h='${even(paddedH)}':eval=frame`;
+  } else if (Math.abs(scaleX - 1) > 1e-6 || Math.abs(scaleY - 1) > 1e-6) {
+    const even = (size: number) => Math.max(2, Math.round(size / 2) * 2);
+    shape += `,scale=${even(paddedW * scaleX)}:${even(paddedH * scaleY)}`;
+  }
+
+  const shapeTag = `fx_shape_${index}`;
+  filterGraph.push(`${shape}[${shapeTag}]`);
+
+  // 4. Place the shape on a black frame; the position follows the keyframes (times are clip-local, the stream starts at 0)
+  const posX = Math.round(clip.transform?.x ?? 0);
+  const posY = Math.round(clip.transform?.y ?? 0);
+  const axis = (keyframes: Keyframe[] | undefined, staticValue: number, center: string): string =>
+    `${center}+(${hasContent(keyframes) ? buildKeyframeExpr(keyframes, 0, 't') : staticValue})`;
+
+  const maskTag = `fx_mask_${index}`;
+  filterGraph.push(
+    `color=c=black:s=${W}x${H}:r=${fps}:d=${duration.toFixed(3)},format=yuv420p[fx_black_${index}]`
+  );
+  filterGraph.push(
+    `[fx_black_${index}][${shapeTag}]overlay=x='${axis(clip.keyframes?.x, posX, '(W-w)/2')}':y='${axis(clip.keyframes?.y, posY, '(H-h)/2')}':eval=frame:shortest=1,format=yuv420p[${maskTag}]`
+  );
+  return maskTag;
+};
+
+/**
+ * Region effect over everything drawn so far: the frame is processed (blur, mosaic or black), cut to the
+ * region with the mask and overlaid for the clip's time range. Returns the new base label.
+ */
+const pushRegionEffect = (params: RegionEffectParams): string => {
+  const { project, filterGraph, clip, index, baseLabel } = params;
+  const effect = clip.effect!;
+  const { width: W, height: H } = project;
+  const start = clip.startTime;
+  const end = clip.startTime + clip.duration;
+
+  const keep = `fx_keep_${index}`;
+  const copy = `fx_copy_${index}`;
+  const processed = `fx_proc_${index}`;
+  const merged = `fx_merged_${index}`;
+  const next = `fx_out_${index}`;
+
+  let kindFilter: string;
+  if (effect.kind === 'blur') {
+    kindFilter = `gblur=sigma=${formatNumber(blurSigmaPx(effect.strength, H))}:steps=2`;
+  } else if (effect.kind === 'pixelate') {
+    const block = pixelBlockPx(effect.strength, H);
+    kindFilter = `scale=${Math.max(1, Math.ceil(W / block))}:${Math.max(1, Math.ceil(H / block))}:flags=area,scale=${W}:${H}:flags=neighbor`;
+  } else {
+    kindFilter = 'drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill';
+  }
+
+  filterGraph.push(`[${baseLabel}]split[${keep}][${copy}]`);
+  filterGraph.push(`[${copy}]trim=start=${start.toFixed(2)}:end=${end.toFixed(2)},${kindFilter},format=yuv420p[${processed}]`);
+
+  const mask = pushRegionMask(params);
+  // The mask stream starts at 0; move it to the clip's place on the timeline so it lines up with the processed frames
+  filterGraph.push(`[${mask}]setpts=PTS+${start.toFixed(2)}/TB[fx_mask_t_${index}]`);
+  filterGraph.push(`[${processed}][fx_mask_t_${index}]alphamerge[${merged}]`);
+  filterGraph.push(
+    `[${keep}][${merged}]overlay=enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'[${next}]`
+  );
+  return next;
 };
 
 export class FFmpegCommandBuilder {
@@ -314,7 +470,7 @@ export class FFmpegCommandBuilder {
     for (const track of tracks) {
       if (track.isHidden) continue;
       for (const clip of track.clips) {
-        if (clip.type === 'text') continue; // Text clips do not need separate media inputs
+        if (clip.type === 'text' || clip.type === 'effect') continue; // No media behind text or region effects
         if (!assetIndexMap.has(clip.assetId)) {
           const asset = assets.get(clip.assetId);
           if (asset && asset.path) {
@@ -359,6 +515,21 @@ export class FFmpegCommandBuilder {
           project,
           filterGraph,
           source,
+          clip,
+          index: clipIndex,
+          baseLabel: currentVideoBase,
+        });
+        clipIndex++;
+      }
+    }
+
+    // 4b. Region effects (blur, mosaic, black box) act on everything drawn so far; text stays sharp on top
+    for (const track of tracks.filter((t) => t.type === 'effect' && !t.isHidden)) {
+      for (const clip of track.clips) {
+        if (!clip.effect) continue;
+        currentVideoBase = pushRegionEffect({
+          project,
+          filterGraph,
           clip,
           index: clipIndex,
           baseLabel: currentVideoBase,
@@ -418,9 +589,9 @@ export class FFmpegCommandBuilder {
     // 6. Audio clips mixing
     let audioClipIndex = 0;
     for (const track of tracks) {
-      if (track.isMuted || track.type === 'text') continue;
+      if (track.isMuted || track.type === 'text' || track.type === 'effect') continue;
       for (const clip of track.clips) {
-        if (clip.type === 'text') continue;
+        if (clip.type === 'text' || clip.type === 'effect' || clip.type === 'image') continue; // no audio stream
         const inputIdx = assetIndexMap.get(clip.assetId);
         if (inputIdx === undefined) continue;
 

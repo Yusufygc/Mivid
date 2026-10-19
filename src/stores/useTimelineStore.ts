@@ -1,5 +1,18 @@
 import { create } from 'zustand';
-import { Track, Clip, Transform, AudioSettings, TextProperties, AnimatableProp, Easing, ColorGrading } from '@/types/timeline';
+import {
+  Track,
+  Clip,
+  Transform,
+  AudioSettings,
+  TextProperties,
+  AnimatableProp,
+  Easing,
+  ColorGrading,
+  EffectKind,
+  EffectSettings,
+  FitMode,
+} from '@/types/timeline';
+import { DEFAULT_EFFECT_SECONDS, EFFECT_KIND_LABELS, clampEffect, defaultEffect } from '@/core/effects/regionEffects';
 import { NEUTRAL_GRADING, clampGrading, isNeutralGrading } from '@/core/color/colorGrading';
 import { MediaAsset } from '@/types/asset';
 import { TimelineEngine } from '@/core/timeline/timelineEngine';
@@ -77,6 +90,18 @@ interface TimelineStoreState {
   updateClipAudio: (clipId: string, audio: Partial<AudioSettings>) => void;
   /** Updates the color adjustment; a neutral result removes it from the clip */
   updateClipColor: (clipId: string, grading: Partial<ColorGrading>) => void;
+  /**
+   * Adds a region effect (blur, mosaic, black box) at the playhead on an effect track.
+   * `region` is the box in project pixels, center given as offset from the frame center; default is the middle 40%.
+   */
+  addEffectClip: (
+    kind: EffectKind,
+    region?: { centerX: number; centerY: number; width: number; height: number }
+  ) => Clip | null;
+  updateClipEffect: (clipId: string, effect: Partial<EffectSettings>) => void;
+  updateClipFit: (clipId: string, fit: FitMode) => void;
+  /** 0 turns the blurred backdrop off */
+  updateClipBackdrop: (clipId: string, strength: number) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
   addTransition: (clipId: string, position: 'in' | 'out', transitionType: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe') => void;
@@ -416,6 +441,8 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
         fadeIn: 0,
         fadeOut: 0,
       },
+      // New footage keeps its aspect ratio; old projects without `fit` stay stretched
+      fit: asset.type === 'video' || asset.type === 'image' ? 'contain' : undefined,
     };
 
     const finalTracks = updatedTracks.map((t) =>
@@ -810,6 +837,100 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           const next = clampGrading({ ...NEUTRAL_GRADING, ...c.colorGrading, ...gradingUpdates });
           return { ...c, colorGrading: isNeutralGrading(next) ? undefined : next };
         }),
+      })),
+    }));
+  },
+
+  addEffectClip: (kind, region) => {
+    const { tracks, currentTime } = get();
+    const project = useProjectStore.getState().project;
+    const effect = defaultEffect(project, kind);
+    if (region) {
+      effect.width = region.width;
+      effect.height = region.height;
+    }
+    const clampedEffect = clampEffect(effect, project);
+
+    const duration = DEFAULT_EFFECT_SECONDS;
+    const startTime = clampTime(currentTime);
+    const { targetTrackId, updatedTracks } = TimelineEngine.findOrCreateTrackForPlacement(
+      tracks,
+      'effect',
+      startTime,
+      duration
+    );
+
+    const id = crypto.randomUUID ? crypto.randomUUID() : `effect-${Date.now()}`;
+    const clip: Clip = {
+      id,
+      trackId: targetTrackId,
+      assetId: `effect-asset-${id}`,
+      name: EFFECT_KIND_LABELS[kind],
+      type: 'effect',
+      startTime,
+      duration,
+      inPoint: 0,
+      outPoint: duration,
+      speed: 1,
+      transform: {
+        x: region?.centerX ?? 0,
+        y: region?.centerY ?? 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        opacity: 1,
+        zIndex: 3,
+      },
+      audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      effect: clampedEffect,
+    };
+
+    const finalTracks = updatedTracks.map((t) =>
+      t.id === targetTrackId ? { ...t, clips: [...t.clips, clip].sort((a, b) => a.startTime - b.startTime) } : t
+    );
+    syncProjectDuration(finalTracks);
+    set({ tracks: finalTracks, selectedClipId: id, extraSelectedIds: [], selectedKeyframeTime: null });
+    Logger.info('useTimelineStore', `Effect clip added: ${kind}`, { id });
+    return clip;
+  },
+
+  updateClipEffect: (clipId, effectUpdates) => {
+    const project = useProjectStore.getState().project;
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId || !c.effect) return c;
+          const next = clampEffect({ ...c.effect, ...effectUpdates }, project);
+          // The clip label follows the effect kind until the user renames it (labels are the default names)
+          const wasDefaultName = c.name === EFFECT_KIND_LABELS[c.effect.kind];
+          return { ...c, effect: next, name: wasDefaultName ? EFFECT_KIND_LABELS[next.kind] : c.name };
+        }),
+      })),
+    }));
+  },
+
+  updateClipFit: (clipId, fit) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId && (c.type === 'video' || c.type === 'image') ? { ...c, fit } : c
+        ),
+      })),
+    }));
+  },
+
+  updateClipBackdrop: (clipId, strength) => {
+    const value = Math.min(1, Math.max(0, strength));
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId && (c.type === 'video' || c.type === 'image')
+            ? { ...c, backdropBlur: value > 0 ? value : undefined }
+            : c
+        ),
       })),
     }));
   },

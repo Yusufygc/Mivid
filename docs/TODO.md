@@ -106,6 +106,19 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ---
 
+## 🌫️ Faz 7: Kolay Blur Sistemi ve Sığdırma
+- [x] Bölge efektleri: blur, mozaik, siyah kutu; dikdörtgen/elips, güç, kenar yumuşatma. `effect` kanalında klip olarak durur (konum/ölçek keyframe'lenir)
+- [x] Preview'da "Bölge" aracı: önizlemede dikdörtgen sürükleyerek efekt ekle; köşe tutamaçlarıyla bölgeyi yeniden boyutlandır
+- [x] Medya havuzunda "Efektler" sekmesi, Inspector'da "Bölge Efekti" bölümü
+- [x] Export: efekt hattı (`split` + tür filtresi + maske + `alphamerge` + `overlay`), yalnızca efektin süresi boyunca; gerçek ffmpeg ile doğrulandı
+- [x] Sığdırma (Gerdir / Sığdır / Doldur): yeni klipler oranı korur, eski projeler değişmez
+- [x] Bulanık arka plan dolgusu (dikey proje + yatay video gibi durumlar için), preview ve export
+- [x] Export'ta resim klipleri için ses akışı istemeyi bıraktı
+- [ ] Yüz/nesne takibi, efekt gücü keyframe'i, döndürülmüş bölge, ters mod (bölge hariç bulanıklaştır)
+- [ ] Resim klipleri (preview'da çizim, export'ta `-loop 1`)
+
+---
+
 ## 🔮 Gelecek Fazlar & Geliştirme Fikirleri (Backlog)
 - [ ] Video filtreleri ve Renk Ayarları (LUT, Parlaklık/Kontrast/Doygunluk)
 - [ ] Geçiş efektleri (Cross dissolve, Slide, Fade - `xfade`)

@@ -1,10 +1,12 @@
 import React from 'react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge, Palette } from 'lucide-react';
+import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge, Palette, BoxSelect, Maximize } from 'lucide-react';
 import { TextInspector } from './TextInspector';
 import { KeyframeControls } from './KeyframeControls';
 import { evaluateProp } from '@/core/animation/keyframes';
 import { maxFade } from '@/core/audio/fades';
+import { EFFECT_KIND_LABELS, EFFECT_SHAPE_LABELS } from '@/core/effects/regionEffects';
+import { FitMode } from '@/types/timeline';
 import { COLOR_PRESETS, GRADING_LIMITS, NEUTRAL_GRADING, isNeutralGrading } from '@/core/color/colorGrading';
 import { MAX_CLIP_SPEED, MIN_CLIP_SPEED } from '@/stores/useTimelineStore';
 
@@ -18,6 +20,9 @@ export const Inspector: React.FC = () => {
     updateClipTransform,
     updateClipAudio,
     updateClipColor,
+    updateClipEffect,
+    updateClipFit,
+    updateClipBackdrop,
     updateClipTiming,
     setClipSpeed,
   } = useTimelineStore();
@@ -52,6 +57,7 @@ export const Inspector: React.FC = () => {
   const opacityValue = evaluateProp(selectedClip, 'opacity', evalTime);
   const rotationValue = evaluateProp(selectedClip, 'rotation', evalTime);
   const isMedia = selectedClip.type === 'video' || selectedClip.type === 'audio';
+  const isEffect = selectedClip.type === 'effect';
 
   return (
     <div className="w-72 bg-surface border-l border-surface-border flex flex-col h-full overflow-y-auto select-none">
@@ -81,7 +87,7 @@ export const Inspector: React.FC = () => {
           </div>
 
           {/* InPoint (Media Start Offset) */}
-          {selectedClip.type !== 'text' && (
+          {selectedClip.type !== 'text' && !isEffect && (
             <div className="pt-2 border-t border-surface-border/60 flex items-center justify-between text-[11px]">
               <div className="flex items-center gap-1.5 text-gray-400">
                 <Clock className="w-3.5 h-3.5 text-primary" />
@@ -151,6 +157,100 @@ export const Inspector: React.FC = () => {
         {/* Text Specific Inspector */}
         {selectedClip.type === 'text' && <TextInspector clip={selectedClip} />}
 
+        {/* Region effect (blur, mosaic, black box) */}
+        {isEffect && selectedClip.effect && (
+          <div className="space-y-3 pt-2 border-t border-surface-border">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+              <BoxSelect className="w-3.5 h-3.5 text-cyan-300" />
+              <span>Bölge Efekti</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['blur', 'pixelate', 'blackbox'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  onClick={() => updateClipEffect(selectedClip.id, { kind })}
+                  className={`py-1 rounded text-[11px] font-medium transition-all ${
+                    selectedClip.effect!.kind === kind
+                      ? 'bg-cyan-500 text-black font-semibold'
+                      : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                  }`}
+                >
+                  {EFFECT_KIND_LABELS[kind]}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['rect', 'ellipse'] as const).map((shape) => (
+                <button
+                  key={shape}
+                  onClick={() => updateClipEffect(selectedClip.id, { shape })}
+                  className={`py-1 rounded text-[11px] font-medium transition-all ${
+                    selectedClip.effect!.shape === shape
+                      ? 'bg-cyan-500/80 text-black font-semibold'
+                      : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                  }`}
+                >
+                  {EFFECT_SHAPE_LABELS[shape]}
+                </button>
+              ))}
+            </div>
+
+            {selectedClip.effect.kind !== 'blackbox' && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>{selectedClip.effect.kind === 'blur' ? 'Bulanıklık' : 'Blok boyutu'}</span>
+                  <span className="font-mono text-gray-200">{Math.round(selectedClip.effect.strength * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.02"
+                  max="1"
+                  step="0.01"
+                  value={selectedClip.effect.strength}
+                  onChange={(e) => updateClipEffect(selectedClip.id, { strength: parseFloat(e.target.value) })}
+                  className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Kenar yumuşatma</span>
+                <span className="font-mono text-gray-200">{Math.round(selectedClip.effect.feather * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedClip.effect.feather}
+                onChange={(e) => updateClipEffect(selectedClip.id, { feather: parseFloat(e.target.value) })}
+                className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-cyan-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {(['width', 'height'] as const).map((key) => (
+                <div key={key} className="space-y-1">
+                  <label className="text-[11px] text-gray-400">{key === 'width' ? 'Genişlik (px)' : 'Yükseklik (px)'}</label>
+                  <input
+                    type="number"
+                    value={Math.round(selectedClip.effect![key])}
+                    onChange={(e) => updateClipEffect(selectedClip.id, { [key]: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-surface-light px-2 py-1 rounded text-xs text-gray-200 border border-surface-border focus:border-primary outline-none font-mono"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-500">
+              Bölgeyi önizlemede köşelerinden boyutlandır, sürükleyerek taşı. Hareketli nesne için Konum / Ölçek
+              keyframe'lerini kullan.
+            </p>
+          </div>
+        )}
+
         {/* Visual Transforms (Video, Overlay & Text) */}
         {selectedClip.type !== 'audio' && (
           <div className="space-y-4 pt-2 border-t border-surface-border">
@@ -210,6 +310,8 @@ export const Inspector: React.FC = () => {
               </div>
             </div>
 
+            {!isEffect && (
+              <>
             {/* Opacity */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center text-xs text-gray-400">
@@ -248,6 +350,59 @@ export const Inspector: React.FC = () => {
                 onChange={(e) => updateClipTransform(selectedClip.id, { rotation: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-primary"
               />
+            </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Fit and blurred backdrop (video & image clips) */}
+        {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+          <div className="space-y-3 pt-2 border-t border-surface-border">
+            <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+              <Maximize className="w-3.5 h-3.5 text-cyan-300" />
+              <span>Sığdırma (Fit)</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: 'stretch', name: 'Gerdir' },
+                  { id: 'contain', name: 'Sığdır' },
+                  { id: 'cover', name: 'Doldur' },
+                ] as { id: FitMode; name: string }[]
+              ).map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => updateClipFit(selectedClip.id, option.id)}
+                  className={`py-1 rounded text-[11px] font-medium transition-all ${
+                    (selectedClip.fit ?? 'stretch') === option.id
+                      ? 'bg-cyan-500 text-black font-semibold'
+                      : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
+                  }`}
+                >
+                  {option.name}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Bulanık arka plan</span>
+                <span className="font-mono text-gray-200">
+                  {selectedClip.backdropBlur ? `${Math.round(selectedClip.backdropBlur * 100)}%` : 'Kapalı'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={selectedClip.backdropBlur ?? 0}
+                onChange={(e) => updateClipBackdrop(selectedClip.id, parseFloat(e.target.value))}
+                className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-cyan-400"
+              />
+              <p className="text-[10px] text-gray-500">
+                Sığdır ile kalan boşluklar videonun bulanık kopyasıyla dolar.
+              </p>
             </div>
           </div>
         )}
@@ -323,7 +478,7 @@ export const Inspector: React.FC = () => {
         )}
 
         {/* Transitions Settings (for video & overlay clips) */}
-        {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && (
+        {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && !isEffect && (
           <div className="space-y-4 pt-2 border-t border-surface-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
@@ -427,7 +582,7 @@ export const Inspector: React.FC = () => {
         )}
 
         {/* Audio Settings (for video & audio clips) */}
-        {selectedClip.type !== 'text' && (
+        {selectedClip.type !== 'text' && !isEffect && (
           <div className="space-y-4 pt-2 border-t border-surface-border">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
               <Volume2 className="w-3.5 h-3.5 text-emerald-400" />

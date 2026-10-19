@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useTimelineStore, clearClipboard } from './useTimelineStore';
+import { useProjectStore } from './useProjectStore';
 import { Clip, Track } from '@/types/timeline';
 
 const makeClip = (id: string, startTime: number, duration: number, overrides: Partial<Clip> = {}): Clip => ({
@@ -329,5 +330,102 @@ describe('useTimelineStore - color adjustment', () => {
   it('ignores text clips', () => {
     useTimelineStore.getState().updateClipColor('t', { contrast: 1.4 });
     expect(getClip('t')!.colorGrading).toBeUndefined();
+  });
+});
+
+describe('useTimelineStore - region effects and fit', () => {
+  const clips = (): Clip[] => useTimelineStore.getState().tracks.flatMap((t) => t.clips);
+
+  beforeEach(() => {
+    useProjectStore.getState().loadProject({
+      id: 'p',
+      name: 'p',
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      aspectRatio: '16:9',
+      duration: 30,
+      backgroundColor: '#000000',
+    });
+    setTracks([makeClip('a', 0, 10)]);
+    useTimelineStore.setState({
+      tracks: [
+        { id: 'track-t1', name: 'T1', type: 'text', isMuted: false, isLocked: false, isHidden: false, clips: [] },
+        ...useTimelineStore.getState().tracks,
+      ],
+    });
+  });
+
+  it('adds a blur over the middle of the frame at the playhead, on a new effect track below the text track', () => {
+    useTimelineStore.setState({ currentTime: 2 });
+    const clip = useTimelineStore.getState().addEffectClip('blur')!;
+
+    expect(clip.type).toBe('effect');
+    expect(clip.startTime).toBe(2);
+    expect(clip.duration).toBe(3);
+    expect(clip.effect).toMatchObject({ kind: 'blur', shape: 'rect', width: 768, height: 432 });
+    expect(clip.transform).toMatchObject({ x: 0, y: 0 });
+    expect(useTimelineStore.getState().selectedClipId).toBe(clip.id);
+
+    const order = useTimelineStore.getState().tracks.map((t) => t.type);
+    expect(order).toEqual(['text', 'effect', 'video']);
+  });
+
+  it('places a drawn region by its center offset and size', () => {
+    const clip = useTimelineStore
+      .getState()
+      .addEffectClip('pixelate', { centerX: -200, centerY: 100, width: 300, height: 150 })!;
+    expect(clip.effect).toMatchObject({ kind: 'pixelate', width: 300, height: 150 });
+    expect(clip.transform).toMatchObject({ x: -200, y: 100 });
+  });
+
+  it('puts overlapping effects on separate effect tracks', () => {
+    useTimelineStore.getState().addEffectClip('blur');
+    useTimelineStore.getState().addEffectClip('blackbox');
+    expect(useTimelineStore.getState().tracks.filter((t) => t.type === 'effect')).toHaveLength(2);
+  });
+
+  it('updates and clamps the effect and renames the clip with its default kind name', () => {
+    const clip = useTimelineStore.getState().addEffectClip('blur')!;
+    useTimelineStore.getState().updateClipEffect(clip.id, { kind: 'pixelate', strength: 9, width: 1 });
+    const updated = clips().find((c) => c.id === clip.id)!;
+    expect(updated.effect).toMatchObject({ kind: 'pixelate', strength: 1, width: 8 });
+    expect(updated.name).toBe('Mozaik');
+  });
+
+  it('keeps a custom name when the effect kind changes', () => {
+    const clip = useTimelineStore.getState().addEffectClip('blur')!;
+    useTimelineStore.setState((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => (c.id === clip.id ? { ...c, name: 'Plaka' } : c)),
+      })),
+    }));
+    useTimelineStore.getState().updateClipEffect(clip.id, { kind: 'blackbox' });
+    expect(clips().find((c) => c.id === clip.id)!.name).toBe('Plaka');
+  });
+
+  it('sets fit and backdrop blur on video clips only', () => {
+    useTimelineStore.getState().updateClipFit('a', 'cover');
+    useTimelineStore.getState().updateClipBackdrop('a', 0.6);
+    expect(clips().find((c) => c.id === 'a')).toMatchObject({ fit: 'cover', backdropBlur: 0.6 });
+
+    useTimelineStore.getState().updateClipBackdrop('a', 0);
+    expect(clips().find((c) => c.id === 'a')!.backdropBlur).toBeUndefined();
+
+    const effect = useTimelineStore.getState().addEffectClip('blur')!;
+    useTimelineStore.getState().updateClipFit(effect.id, 'cover');
+    expect(clips().find((c) => c.id === effect.id)!.fit).toBeUndefined();
+  });
+
+  it('new footage fits its frame by default while audio does not', () => {
+    const video = useTimelineStore
+      .getState()
+      .addClipFromAsset({ id: 'v1', name: 'v', path: 'C:/v.mp4', url: '', type: 'video', duration: 5, size: 1, createdAt: 0 })!;
+    const audio = useTimelineStore
+      .getState()
+      .addClipFromAsset({ id: 'a1', name: 'a', path: 'C:/a.mp3', url: '', type: 'audio', duration: 5, size: 1, createdAt: 0 })!;
+    expect(video.fit).toBe('contain');
+    expect(audio.fit).toBeUndefined();
   });
 });

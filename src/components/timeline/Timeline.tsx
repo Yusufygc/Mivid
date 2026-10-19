@@ -24,6 +24,7 @@ import {
   Layers,
   Type,
   X,
+  BoxSelect,
 } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 import { Clip } from '@/types/timeline';
@@ -293,6 +294,7 @@ export const Timeline: React.FC = () => {
     let bgColor = 'bg-timeline-clipVideo border-cyan-500/50';
     if (clip.type === 'audio') bgColor = 'bg-timeline-clipAudio border-emerald-500/50';
     if (clip.type === 'text') bgColor = 'bg-amber-600/70 border-amber-400/80';
+    if (clip.type === 'effect') bgColor = 'bg-cyan-700/70 border-cyan-400/70';
     if (clip.trackId === 'track-v2') bgColor = 'bg-timeline-clipText border-purple-500/50';
 
     return `absolute top-1 bottom-1 rounded-md border flex items-center px-2 cursor-grab active:cursor-grabbing transition-all overflow-hidden ${bgColor} ${
@@ -412,6 +414,8 @@ export const Timeline: React.FC = () => {
                     <Music className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                   ) : track.type === 'text' ? (
                     <Type className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  ) : track.type === 'effect' ? (
+                    <BoxSelect className="w-4 h-4 text-cyan-300 flex-shrink-0" />
                   ) : track.type === 'overlay' ? (
                     <Layers className="w-4 h-4 text-purple-400 flex-shrink-0" />
                   ) : (
@@ -562,6 +566,7 @@ export const Timeline: React.FC = () => {
                         {/* Clip Label */}
                         <span className="text-[11px] font-medium text-white truncate pointer-events-none drop-shadow flex items-center gap-1 z-10 relative">
                           {clip.type === 'text' && <Type className="w-3 h-3 text-amber-300 flex-shrink-0" />}
+                          {clip.type === 'effect' && <BoxSelect className="w-3 h-3 text-cyan-200 flex-shrink-0" />}
                           {clip.name}
                           {Math.abs(clip.speed - 1) > 0.001 && (
                             <span className="text-[9px] font-mono bg-black/40 text-amber-300 px-1 rounded flex-shrink-0">

@@ -4,8 +4,16 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import { useAssetStore } from '@/stores/useAssetStore';
 import { previewEngine } from '@/core/preview/previewEngine';
 import { resolveTransform } from '@/core/animation/keyframes';
-import { cursorForHandle, rotationFromDrag, scaleFromDrag } from '@/core/preview/handleMath';
-import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import {
+  cursorForHandle,
+  rectFromCorners,
+  regionFromCorner,
+  rotationFromDrag,
+  scaleFromDrag,
+} from '@/core/preview/handleMath';
+import { EFFECT_KIND_LABELS, MIN_REGION_SIZE } from '@/core/effects/regionEffects';
+import { EffectKind } from '@/types/timeline';
+import { Play, Pause, RotateCcw, ChevronLeft, ChevronRight, Maximize2, BoxSelect } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 
 export const PreviewPlayer: React.FC = () => {
@@ -24,7 +32,11 @@ export const PreviewPlayer: React.FC = () => {
     setCurrentTime,
     setSelectedClipId,
     updateClipTransform,
+    updateClipEffect,
+    addEffectClip,
   } = useTimelineStore();
+  /** Region tool: drag a rectangle on the preview to add a blur / mosaic / black box there */
+  const [regionTool, setRegionTool] = useState<EffectKind | null>(null);
   const [playing, setPlaying] = useState(isPlaying);
   type DragState =
     | { mode: 'move'; clipId: string; startClientX: number; startClientY: number; originX: number; originY: number }
@@ -35,7 +47,9 @@ export const PreviewPlayer: React.FC = () => {
         start: { x: number; y: number };
         originScale: number;
         originRotation: number;
-      };
+      }
+    | { mode: 'region'; clipId: string; opposite: { x: number; y: number }; scale: number }
+    | { mode: 'draw'; kind: EffectKind; start: { x: number; y: number } };
   const dragRef = useRef<DragState | null>(null);
 
   // Show the selected clip's outline on the canvas
@@ -54,6 +68,12 @@ export const PreviewPlayer: React.FC = () => {
     if (e.button !== 0) return;
     const point = toProjectPoint(e);
 
+    if (regionTool) {
+      dragRef.current = { mode: 'draw', kind: regionTool, start: { x: point.x, y: point.y } };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
     // Handles of the already selected clip win over everything under them
     const handle = previewEngine.hitHandle(point.x, point.y);
     const geometry = handle ? previewEngine.getSelectionGeometry() : null;
@@ -61,6 +81,19 @@ export const PreviewPlayer: React.FC = () => {
       const handleClip = tracks.flatMap((t) => t.clips).find((c) => c.id === geometry.clipId);
       const handleTrack = tracks.find((t) => t.id === handleClip?.trackId);
       if (!handleClip || handleTrack?.isLocked) return;
+
+      if (handleClip.type === 'effect' && handle !== 'rotate') {
+        // Corners of a region effect resize the region around the opposite corner
+        const opposite = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' }[handle] as 'nw' | 'ne' | 'se' | 'sw';
+        dragRef.current = {
+          mode: 'region',
+          clipId: geometry.clipId,
+          opposite: geometry.corners[opposite],
+          scale: geometry.scale,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+        return;
+      }
 
       dragRef.current = {
         mode: handle === 'rotate' ? 'rotate' : 'scale',
@@ -98,12 +131,31 @@ export const PreviewPlayer: React.FC = () => {
     const point = toProjectPoint(e);
 
     if (!drag) {
+      if (regionTool) {
+        e.currentTarget.style.cursor = 'crosshair';
+        return;
+      }
       const handle = previewEngine.hitHandle(point.x, point.y);
       if (handle) {
         e.currentTarget.style.cursor = cursorForHandle(handle, previewEngine.getSelectionGeometry()?.rotation ?? 0);
       } else {
         e.currentTarget.style.cursor = previewEngine.hitTest(point.x, point.y) ? 'move' : 'default';
       }
+      return;
+    }
+
+    if (drag.mode === 'draw') {
+      previewEngine.setDraftRegion(rectFromCorners(drag.start, point));
+      return;
+    }
+
+    if (drag.mode === 'region') {
+      const region = regionFromCorner(drag.opposite, point, drag.scale, MIN_REGION_SIZE);
+      updateClipTransform(drag.clipId, {
+        x: Math.round(region.centerX - project.width / 2),
+        y: Math.round(region.centerY - project.height / 2),
+      });
+      updateClipEffect(drag.clipId, { width: region.width, height: region.height });
       return;
     }
 
@@ -139,8 +191,25 @@ export const PreviewPlayer: React.FC = () => {
   };
 
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragRef.current) return;
+    const drag = dragRef.current;
+    if (!drag) return;
     dragRef.current = null;
+
+    if (drag.mode === 'draw') {
+      previewEngine.setDraftRegion(null);
+      const rect = rectFromCorners(drag.start, toProjectPoint(e));
+      // A tiny drag is a click: ignore it and keep the tool armed
+      if (rect.width >= 12 && rect.height >= 12) {
+        addEffectClip(drag.kind, {
+          centerX: Math.round(rect.x + rect.width / 2 - project.width / 2),
+          centerY: Math.round(rect.y + rect.height / 2 - project.height / 2),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        });
+        setRegionTool(null);
+      }
+    }
+
     previewEngine.setGuides({ x: false, y: false });
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -188,6 +257,23 @@ export const PreviewPlayer: React.FC = () => {
     }
   };
 
+  // Leaving the region tool restores the normal cursor; Escape cancels it
+  useEffect(() => {
+    if (!regionTool) {
+      if (canvasRef.current) canvasRef.current.style.cursor = 'default';
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        dragRef.current = null;
+        previewEngine.setDraftRegion(null);
+        setRegionTool(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [regionTool]);
+
   // Space & Arrow Key Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -220,6 +306,27 @@ export const PreviewPlayer: React.FC = () => {
     <div className="flex-1 bg-background flex flex-col items-center justify-between p-4 min-w-0 select-none">
       {/* Canvas Viewport */}
       <div ref={containerRef} className="flex-1 w-full flex items-center justify-center relative overflow-hidden">
+        {/* Region tool: pick a kind, then drag a rectangle on the picture */}
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-surface/90 backdrop-blur border border-surface-border rounded-lg p-1 text-[11px]">
+          <span className="flex items-center gap-1 px-1.5 text-gray-400" title="Bölge efekti çiz">
+            <BoxSelect className="w-3.5 h-3.5 text-cyan-300" />
+            Bölge
+          </span>
+          {(['blur', 'pixelate', 'blackbox'] as const).map((kind) => (
+            <button
+              key={kind}
+              onClick={() => setRegionTool(regionTool === kind ? null : kind)}
+              title={`${EFFECT_KIND_LABELS[kind]}: önizlemede bir dikdörtgen sürükle (Esc: iptal)`}
+              className={`px-2 py-1 rounded font-medium transition-all ${
+                regionTool === kind
+                  ? 'bg-cyan-500 text-black'
+                  : 'bg-surface-light text-gray-300 hover:text-white hover:bg-surface-border/60'
+              }`}
+            >
+              {EFFECT_KIND_LABELS[kind]}
+            </button>
+          ))}
+        </div>
         <div
           style={getAspectRatioStyle()}
           className="relative bg-black rounded-lg shadow-2xl overflow-hidden border border-surface-border flex items-center justify-center"

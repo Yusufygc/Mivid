@@ -4,6 +4,8 @@ import {
   rotationFromDrag,
   normalizeDegrees,
   cursorForHandle,
+  regionFromCorner,
+  rectFromCorners,
   MAX_HANDLE_SCALE,
   MIN_HANDLE_SCALE,
 } from './handleMath';
@@ -77,5 +79,32 @@ describe('cursorForHandle', () => {
   it('follows the clip rotation', () => {
     expect(cursorForHandle('nw', 90)).toBe('nesw-resize');
     expect(cursorForHandle('nw', 45)).toBe('ns-resize');
+  });
+});
+
+describe('regionFromCorner / rectFromCorners', () => {
+  it('spans the box between the fixed corner and the pointer', () => {
+    const box = regionFromCorner({ x: 100, y: 100 }, { x: 300, y: 250 }, 1, 8);
+    expect(box).toEqual({ centerX: 200, centerY: 175, width: 200, height: 150 });
+  });
+
+  it('works when the pointer crosses over the fixed corner', () => {
+    const box = regionFromCorner({ x: 300, y: 250 }, { x: 100, y: 100 }, 1, 8);
+    expect(box).toEqual({ centerX: 200, centerY: 175, width: 200, height: 150 });
+  });
+
+  it('divides by the clip scale so the size stays at scale 1', () => {
+    const box = regionFromCorner({ x: 0, y: 0 }, { x: 400, y: 200 }, 2, 8);
+    expect(box).toMatchObject({ centerX: 200, centerY: 100, width: 200, height: 100 });
+  });
+
+  it('never shrinks below the minimum size', () => {
+    const box = regionFromCorner({ x: 100, y: 100 }, { x: 101, y: 100 }, 1, 8);
+    expect(box.width).toBe(8);
+    expect(box.height).toBe(8);
+  });
+
+  it('normalizes a rectangle between two corners', () => {
+    expect(rectFromCorners({ x: 50, y: 80 }, { x: 10, y: 20 })).toEqual({ x: 10, y: 20, width: 40, height: 60 });
   });
 });

@@ -164,6 +164,53 @@ describe('PreviewEngine.hitTest', () => {
     expect(engine.hitHandle(g.handles.nw.x, g.handles.nw.y)).toBe('nw');
   });
 
+  const effectClip = (id: string, overrides: Partial<Clip> = {}): Clip =>
+    baseClip(id, 'effect', {
+      effect: { kind: 'blur', shape: 'rect', strength: 0.5, feather: 0, width: 200, height: 100 },
+      transform: { x: 100, y: 50, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex: 3 },
+      ...overrides,
+    });
+
+  it('hit-tests a region effect by its own size and puts it above the video', () => {
+    setup([baseClip('v', 'video'), effectClip('e')]);
+    // region center (600, 300), 200x100
+    expect(engine.hitTest(600, 300)?.id).toBe('e');
+    expect(engine.hitTest(690, 340)?.id).toBe('e');
+    expect(engine.hitTest(720, 300)?.id).toBe('v'); // outside the region, the video is hit
+  });
+
+  it('scales a region effect with its transform scale', () => {
+    setup([
+      effectClip('e', { transform: { x: 0, y: 0, scaleX: 2, scaleY: 2, rotation: 0, opacity: 1, zIndex: 3 } }),
+    ]);
+    expect(engine.hitTest(500 + 190, 250)?.id).toBe('e'); // 200 * 2 / 2 = 200 half width
+    expect(engine.hitTest(500 + 210, 250)).toBeNull();
+  });
+
+  it('gives a region effect corner handles but no rotation handle', () => {
+    setup([effectClip('e')]);
+    engine.setSelectedClipId('e');
+    const g = engine.getSelectionGeometry()!;
+    expect(g.rotatable).toBe(false);
+    expect(g.handles.nw).toEqual({ x: 500, y: 250 });
+    expect(g.handles.se).toEqual({ x: 700, y: 350 });
+    expect(engine.hitHandle(g.handles.rotate.x, g.handles.rotate.y)).toBeNull();
+    expect(engine.hitHandle(700, 350)).toBe('se');
+  });
+
+  it('limits a fitted video to the picture area when the footage size is known', () => {
+    setup([baseClip('v', 'video', { fit: 'contain' })]);
+    // Fake a loaded 500x500 video: contain in 1000x500 leaves bars left and right of a 500x500 square
+    (engine as unknown as { currentAssets: Map<string, unknown> }).currentAssets.set('asset-v', { id: 'asset-v' });
+    (engine as unknown as { videoPool: Map<string, unknown> }).videoPool.set('asset-v', {
+      videoWidth: 500,
+      videoHeight: 500,
+    });
+    expect(engine.hitTest(500, 250)?.id).toBe('v');
+    expect(engine.hitTest(100, 250)).toBeNull(); // in the left bar
+    expect(engine.hitTest(900, 250)).toBeNull(); // in the right bar
+  });
+
   it('has no handles when nothing is selected or the selected clip is not active', () => {
     setup([baseClip('v', 'video', { startTime: 3 })]);
     expect(engine.getSelectionGeometry()).toBeNull();

@@ -1,14 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { useAssetStore } from '@/stores/useAssetStore';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Upload, Plus, Film, Music, Image as ImageIcon, Trash2, Clock, Type, Layers } from 'lucide-react';
+import { Upload, Plus, Film, Music, Image as ImageIcon, Trash2, Clock, Type, Layers, BoxSelect } from 'lucide-react';
 import { formatTimecode } from '@/utils/time';
 import { MediaAsset } from '@/types/asset';
 import { TextPresets } from './TextPresets';
 import { TransitionPresets } from './TransitionPresets';
+import { EffectPresets } from './EffectPresets';
 
 export const MediaPool: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'transitions'>('media');
+  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'transitions' | 'effects'>('media');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { assets, importFile, importFromPath, removeAsset } = useAssetStore();
   const { addClipFromAsset } = useTimelineStore();
@@ -97,6 +98,18 @@ export const MediaPool: React.FC = () => {
           <Layers className="w-3.5 h-3.5" />
           <span>Geçişler</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('effects')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'effects'
+              ? 'bg-surface text-primary border border-surface-border shadow-sm'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-surface-light/40'
+          }`}
+        >
+          <BoxSelect className="w-3.5 h-3.5" />
+          <span>Efektler</span>
+        </button>
       </div>
 
       {activeTab === 'text' ? (
@@ -106,6 +119,10 @@ export const MediaPool: React.FC = () => {
       ) : activeTab === 'transitions' ? (
         <div className="flex-1 overflow-y-auto">
           <TransitionPresets />
+        </div>
+      ) : activeTab === 'effects' ? (
+        <div className="flex-1 overflow-y-auto">
+          <EffectPresets />
         </div>
       ) : (
         <>

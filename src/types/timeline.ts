@@ -1,6 +1,6 @@
 import { AssetType } from './asset';
 
-export type TrackType = 'video' | 'audio' | 'overlay' | 'text';
+export type TrackType = 'video' | 'audio' | 'overlay' | 'text' | 'effect';
 
 export interface Transform {
   x: number; // Offset in pixels from canvas center
@@ -83,6 +83,22 @@ export interface Keyframe {
 
 export type ClipKeyframes = Partial<Record<AnimatableProp, Keyframe[]>>;
 
+export type EffectKind = 'blur' | 'pixelate' | 'blackbox';
+export type EffectShape = 'rect' | 'ellipse';
+
+/** A region effect (blur, mosaic, black box). Lives on an `effect` track; position and scale come from `transform`. */
+export interface EffectSettings {
+  kind: EffectKind;
+  shape: EffectShape;
+  strength: number; // 0..1, blur radius / mosaic block size
+  feather: number; // 0..1, soft edge
+  width: number; // Region size in project pixels at scale 1
+  height: number;
+}
+
+/** How footage fills the project frame: stretched (old behavior), fitted inside (letterbox) or covering it (crop) */
+export type FitMode = 'stretch' | 'contain' | 'cover';
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -101,6 +117,9 @@ export interface Clip {
   transitionOut?: Transition;
   colorGrading?: ColorGrading;
   keyframes?: ClipKeyframes; // Each list sorted by time
+  effect?: EffectSettings; // Only on clips of type 'effect'
+  fit?: FitMode; // Video / image clips. Undefined = stretch, so old projects look the same
+  backdropBlur?: number; // 0..1: a blurred, cover-fitted copy of the footage fills the frame behind the clip
 }
 
 export interface Track {

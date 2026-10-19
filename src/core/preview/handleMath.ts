@@ -49,3 +49,37 @@ export const cursorForHandle = (type: 'nw' | 'ne' | 'se' | 'sw' | 'rotate', rota
   if (angle < 112.5) return 'ns-resize';
   return 'nesw-resize';
 };
+
+/**
+ * Box spanned by a fixed opposite corner and the dragged pointer (both in project pixels).
+ * Returns the center and the size at scale 1 (`scale` is the clip's current scale), never smaller than `minSize`.
+ */
+export const regionFromCorner = (
+  opposite: Point,
+  pointer: Point,
+  scale: number,
+  minSize: number
+): { centerX: number; centerY: number; width: number; height: number } => {
+  const safeScale = scale > 0 ? scale : 1;
+  const min = minSize * safeScale;
+
+  let dx = pointer.x - opposite.x;
+  let dy = pointer.y - opposite.y;
+  if (Math.abs(dx) < min) dx = (dx < 0 ? -1 : 1) * min;
+  if (Math.abs(dy) < min) dy = (dy < 0 ? -1 : 1) * min;
+
+  return {
+    centerX: opposite.x + dx / 2,
+    centerY: opposite.y + dy / 2,
+    width: Math.abs(dx) / safeScale,
+    height: Math.abs(dy) / safeScale,
+  };
+};
+
+/** Normalized rectangle (positive size) between two corners */
+export const rectFromCorners = (a: Point, b: Point): { x: number; y: number; width: number; height: number } => ({
+  x: Math.min(a.x, b.x),
+  y: Math.min(a.y, b.y),
+  width: Math.abs(a.x - b.x),
+  height: Math.abs(a.y - b.y),
+});

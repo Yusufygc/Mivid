@@ -6,15 +6,15 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 
 ## 1. Şu anki durum
 
-- `feature` dalında, **commit edilmemiş** çalışma ağacı var (madde 3–7 aşağıda). Son commit: `cde2c13` (Undo/Redo). Hiçbir şey push edilmedi.
-- Testler: 132 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
-- Bu oturumda yapılanlar (hepsi tarayıcıda gerçek fare/klavye ile denendi, export ayrıca gerçek ffmpeg ile):
-  - **Preview tutamaçları:** köşelerden ölçekleme, yuvarlak tutamaçla döndürme (Shift = 15°), tutamaçlar tuval içinde kalır. `src/core/preview/handleMath.ts`, `previewEngine.getSelectionGeometry/hitHandle`
-  - **Rotation keyframe + export:** `AnimatableProp`'a `rotation` eklendi. Export `pushVisualLayer` ile yeniden düzenlendi (video ve metin aynı hat). Animasyonlu/döndürülmüş metin saydam katman üzerinde çiziliyor.
-  - **Keyframe düzenleme:** timeline'da elmasları sürükle/seç/Delete, easing düğmesi (`KeyframeMarkers.tsx`, `KeyframeControls.tsx`)
-  - **Proje kaydet/aç + otomatik kayıt:** `src/core/project/` (`projectFile`, `projectSession`, `projectIO`), `ProjectActions` ve `RecoveryBanner`
-  - **Timeline:** film şeridi + dalga formu (`ClipVisuals`, `mediaCache`), çoklu seçim, kopyala/kes/yapıştır/çoğalt, ripple silme
-- Önceki oturumdan: keyframe sistemi + hız, preview'da sürükleme, Undo/Redo, `npm run desktop`.
+- `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, gürültü azaltma, renk ayarı). **Blur sistemi henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
+- Testler: 192 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- **Karar:** bu projede artık REA / CapCut incelemesi yok; CapCut'ta olmayan, işi kolaylaştıran özgün özellikler yapılıyor (hafızada kayıtlı).
+- **Kolay blur sistemi (commit bekliyor, tarayıcıda gerçek fareyle ve gerçek ffmpeg ile denendi):**
+  - Efekt, `effect` kanalında duran bir klip (ayar katmanı): `Clip.effect` (tür blur/mozaik/siyah kutu, şekil dikdörtgen/elips, güç, kenar yumuşatma, genişlik/yükseklik). Konum ve ölçek `transform` ile, yani keyframe, sürükleme, kopyala, Undo, kaydet/aç hazır.
+  - Preview'da "Bölge" aracı (sol üstte): tür seç, önizlemede dikdörtgen sürükle. Köşe tutamaçları bölgeyi yeniden boyutlandırır (karşı köşe sabit), döndürme tutamacı yok. Medya havuzunda "Efektler" sekmesi.
+  - Preview: `core/preview/effectRenderer.ts` (işlenmiş kopya + şekil maskesi). Export: `pushRegionEffect` (`split`, `trim`, tür filtresi, tek karelik `loop`'lu maske, `alphamerge`, `overlay`).
+  - **Sığdırma:** `Clip.fit` (Gerdir / Sığdır / Doldur); yeni klip varsayılanı Sığdır, eski projeler Gerdir kalır. **Bulanık arka plan:** `Clip.backdropBlur`. Preview ve export (`core/layout/fit.ts`).
+  - Efekt, videonun üstünde ve metinlerin altında çalışır.
 
 ## 2. Ortam notları
 
@@ -34,6 +34,9 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 3. **Tauri yerel kaydet/aç diyalogları.** WebView2'de File System Access API çalışmazsa Rust tarafına (`rfd`) `save_project_dialog` / `open_project_dialog` komutları eklenmeli. Bu, C++ iş yükü kurulumunu gerektirir (bkz. Ortam notları).
 4. **Hız eğrisi (ramp), ters oynatma, dondurma karesi.**
 5. **Ses:** `fadeIn`/`fadeOut` modelde var, UI ve export'ta uygulanmıyor (doğrulanmadı); gürültü azaltma.
+
+6. **Blur sistemi devamı:** yüz/nesne takibi (şimdilik elle keyframe), efekt gücünü keyframe'lemek, döndürülmüş bölge, çoklu bölgeyi tek tuşla (aynı efekti kopyala), "bölge hariç her yeri bulanıklaştır" (ters mod), statik bölgede `crop+gblur` hızlı export yolu.
+7. **Sonraki özgün özellik adayları:** sessizlik silici (`silencedetect` + ripple), SRT içe/dışa aktarma, ses ducking + `loudnorm`, stil kopyala/yapıştır, timeline marker'ları, hedef dosya boyutlu export.
 
 ## 4. Sonraki kademe (CapCut incelemesinden)
 
@@ -57,6 +60,9 @@ CapCut 9.6.0.4097 kurulum klasörü (`C:\Users\yusuf\AppData\Local\CapCut\Apps\9
 - **Metin export'u:** çok satırlı metin export'ta tek satıra çevriliyor (`escapeFFmpegText` `\n` -> boşluk); preview çok satır çiziyor.
 - **Export'ta ffmpeg sürümü:** Tauri önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanıyor, o çalışıyor. Proje köküne konulan `ffmpeg.exe` (2025-08 full build) `drawtext`'te fontconfig yokken segfault veriyor (`fontfile=` verilmezse). Export testi yaparken `C:\ffmpeg\bin` sürümünü kullanın.
 - **Film şeridi** her video asset'i için 12 kare, tüm asset'e esnetilmiş tek şerit (kareler yatayda esnetilir); dalga formu 10 dakikadan uzun seslerde üretilmez.
+- **Blur paritesi:** kenar yumuşatma preview'da bulanık maske, export'ta aynı sigma ile `gblur`'lu şekil; ikisi de gaussian ama piksel düzeyinde birebir değil. Preview'da blur canvas kenarında saydama doğru solar, export'ta kenar kopyalanır (sadece tuval kenarındaki bölgelerde fark).
+- **Bulanık arka plan export'ta** klip opaklığını sabit değerle alır (opaklık keyframe'i arka plana uygulanmaz) ve slide/wipe geçişinde arka plan kaymaz.
+- **Resim klipleri hiç çizilmiyor:** preview resim için `<video>` elemanı kullanıyor (çalışmaz), export `-loop 1` vermiyor. Sadece sesi yok sayma düzeltildi. `fit` ve renk ayarı video içindir; resim desteği ayrı iş.
 - **Slide/wipe geçiş + keyframe x:** giriş ve çıkış ofsetleri artık toplanıyor (eskiden çıkış girişi eziyordu); bu davranış değişikliği ayrıca test edilmedi.
 - **Animasyonlu opaklık export'u `geq` ile** (4K veya uzun kliplerde yavaş olabilir); 1080p, 3 sn için 1.7 sn sürdü. Çok uzun projelerde ölçüm yapılmalı.
 - **Resim klipleri export'ta** `-loop` almıyor, süre boyunca görünmeyebilir (eski sorun, doğrulanmadı).

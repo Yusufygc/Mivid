@@ -6,6 +6,9 @@ import { Logger } from '@/core/logger';
 import { resolveTransform } from '@/core/animation/keyframes';
 import { previewVolume } from '@/core/audio/fades';
 import { canvasFilter } from '@/core/color/colorGrading';
+import { backdropSigmaPx } from '@/core/effects/regionEffects';
+import { clipToFrame, fitRect } from '@/core/layout/fit';
+import { RegionEffectRenderer } from './effectRenderer';
 
 export type TimeUpdateListener = (time: number) => void;
 
@@ -36,6 +39,9 @@ export class PreviewEngine {
 
   private selectedClipId: string | null = null;
   private guides = { x: false, y: false };
+  private effectRenderer = new RegionEffectRenderer();
+  /** Rectangle being drawn with the region tool, in project pixels */
+  private draftRegion: { x: number; y: number; width: number; height: number } | null = null;
 
   private currentProject: ProjectSettings | null = null;
   private currentTracks: Track[] = [];
@@ -101,6 +107,11 @@ export class PreviewEngine {
     this.selectedClipId = id;
   }
 
+  /** Outline of the region being drawn with the region tool (null to hide) */
+  public setDraftRegion(region: { x: number; y: number; width: number; height: number } | null): void {
+    this.draftRegion = region;
+  }
+
   /** Center snap guide lines shown while dragging a clip in the preview */
   public setGuides(guides: { x: boolean; y: boolean }): void {
     this.guides = guides;
@@ -111,7 +122,18 @@ export class PreviewEngine {
     if (!this.currentProject) return null;
     const { width, height } = this.currentProject;
 
+    if (clip.type === 'effect' && clip.effect) {
+      return { x0: -clip.effect.width / 2, y0: -clip.effect.height / 2, x1: clip.effect.width / 2, y1: clip.effect.height / 2 };
+    }
+
     if (clip.type === 'video' || clip.type === 'image') {
+      // Footage that is fitted or covers the frame occupies only part of it; use the real picture size when known
+      const asset = this.currentAssets.get(clip.assetId);
+      const video = asset ? this.videoPool.get(asset.id) : undefined;
+      if (clip.fit && clip.fit !== 'stretch' && video && video.videoWidth > 0) {
+        const r = clipToFrame(fitRect(clip.fit, video.videoWidth, video.videoHeight, width, height), width, height);
+        return { x0: r.x - width / 2, y0: r.y - height / 2, x1: r.x + r.w - width / 2, y1: r.y + r.h - height / 2 };
+      }
       return { x0: -width / 2, y0: -height / 2, x1: width / 2, y1: height / 2 };
     }
 
@@ -142,9 +164,10 @@ export class PreviewEngine {
     const { width, height } = this.currentProject;
 
     const active = TimelineEngine.getActiveClipsAtTime(this.currentTracks, this.currentTime);
-    // Same order as drawComposition: media first, text on top
+    // Same order as drawComposition: media, then region effects, text on top
     const visuals = [
       ...active.filter((c) => c.type === 'video' || c.type === 'image'),
+      ...active.filter((c) => c.type === 'effect'),
       ...active.filter((c) => c.type === 'text'),
     ];
 
@@ -179,7 +202,11 @@ export class PreviewEngine {
     anchor: { x: number; y: number };
     rotation: number;
     scale: number;
+    /** Region effects cannot be rotated, so they have no rotation handle */
+    rotatable: boolean;
     handles: Record<HandleType, { x: number; y: number }>;
+    /** The real box corners, not moved onto the canvas like the handles are */
+    corners: Record<'nw' | 'ne' | 'se' | 'sw', { x: number; y: number }>;
     topCenter: { x: number; y: number };
   } | null {
     if (!this.currentProject || !this.selectedClipId) return null;
@@ -220,7 +247,14 @@ export class PreviewEngine {
       anchor,
       rotation: t.rotation,
       scale: t.scaleX,
+      rotatable: clip.type !== 'effect',
       topCenter,
+      corners: {
+        nw: toWorld(rect.x0, rect.y0),
+        ne: toWorld(rect.x1, rect.y0),
+        se: toWorld(rect.x1, rect.y1),
+        sw: toWorld(rect.x0, rect.y1),
+      },
       handles: {
         nw: onCanvas(toWorld(rect.x0, rect.y0)),
         ne: onCanvas(toWorld(rect.x1, rect.y0)),
@@ -238,7 +272,7 @@ export class PreviewEngine {
     const reach = this.getHandleSize() * 0.75;
 
     // Rotation first: it sits outside the box, corner handles may overlap on tiny clips
-    const order: HandleType[] = ['rotate', 'nw', 'ne', 'se', 'sw'];
+    const order: HandleType[] = geometry.rotatable ? ['rotate', 'nw', 'ne', 'se', 'sw'] : ['nw', 'ne', 'se', 'sw'];
     for (const type of order) {
       const h = geometry.handles[type];
       if (Math.hypot(px - h.x, py - h.y) <= reach) return type;
@@ -258,11 +292,13 @@ export class PreviewEngine {
     ctx.lineWidth = lineWidth;
     ctx.setLineDash([]);
 
-    // Stem from the top edge to the rotation handle
-    ctx.beginPath();
-    ctx.moveTo(geometry.topCenter.x, geometry.topCenter.y);
-    ctx.lineTo(geometry.handles.rotate.x, geometry.handles.rotate.y);
-    ctx.stroke();
+    if (geometry.rotatable) {
+      // Stem from the top edge to the rotation handle
+      ctx.beginPath();
+      ctx.moveTo(geometry.topCenter.x, geometry.topCenter.y);
+      ctx.lineTo(geometry.handles.rotate.x, geometry.handles.rotate.y);
+      ctx.stroke();
+    }
 
     for (const type of ['nw', 'ne', 'se', 'sw'] as const) {
       const h = geometry.handles[type];
@@ -272,11 +308,13 @@ export class PreviewEngine {
       ctx.stroke();
     }
 
-    const r = geometry.handles.rotate;
-    ctx.beginPath();
-    ctx.arc(r.x, r.y, size / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    if (geometry.rotatable) {
+      const r = geometry.handles.rotate;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -301,6 +339,18 @@ export class PreviewEngine {
       ctx.restore();
 
       this.drawHandles(lineWidth);
+    }
+
+    if (this.draftRegion) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(34, 211, 238, 0.18)';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = lineWidth;
+      ctx.setLineDash([lineWidth * 4, lineWidth * 3]);
+      const d = this.draftRegion;
+      ctx.fillRect(d.x, d.y, d.width, d.height);
+      ctx.strokeRect(d.x, d.y, d.width, d.height);
+      ctx.restore();
     }
 
     if (this.guides.x || this.guides.y) {
@@ -680,6 +730,23 @@ export class PreviewEngine {
         }
       }
 
+      // Blurred backdrop: the same footage, cover-fitted and blurred, fills the frame behind the clip
+      if (clip.backdropBlur && clip.backdropBlur > 0 && video.videoWidth > 0 && video.videoHeight > 0) {
+        const cover = fitRect('cover', video.videoWidth, video.videoHeight, width, height);
+        const grow = 1.15; // hides the soft edge a blur leaves at the borders
+        this.ctx.save();
+        this.ctx.globalAlpha = opacity * transitionAlpha;
+        this.ctx.filter = `blur(${backdropSigmaPx(clip.backdropBlur, height).toFixed(2)}px)`;
+        this.ctx.drawImage(
+          video,
+          width / 2 - (cover.w * grow) / 2,
+          height / 2 - (cover.h * grow) / 2,
+          cover.w * grow,
+          cover.h * grow
+        );
+        this.ctx.restore();
+      }
+
       this.ctx.globalAlpha = opacity * transitionAlpha;
 
       this.ctx.translate(width / 2 + posX + transitionTranslateX, height / 2 + posY);
@@ -690,9 +757,29 @@ export class PreviewEngine {
 
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         this.ctx.filter = canvasFilter(clip.colorGrading); // restored by ctx.restore() below
-        this.ctx.drawImage(video, -width / 2, -height / 2, width, height);
+        const fit = clip.fit ?? 'stretch';
+        const rect = fitRect(fit, video.videoWidth, video.videoHeight, width, height);
+        if (fit === 'cover') {
+          // Cover overflows the frame on one axis; only the frame-sized box is visible
+          this.ctx.beginPath();
+          this.ctx.rect(-width / 2, -height / 2, width, height);
+          this.ctx.clip();
+        }
+        this.ctx.drawImage(video, rect.x - width / 2, rect.y - height / 2, rect.w, rect.h);
       }
       this.ctx.restore();
+    }
+
+    // 3b. Region effects (blur, mosaic, black box) act on the video drawn so far; text stays sharp on top
+    for (const clip of activeClips) {
+      if (clip.type !== 'effect' || !clip.effect) continue;
+      const t = resolveTransform(clip, this.currentTime - clip.startTime);
+      this.effectRenderer.apply(this.ctx, this.canvas, clip.effect, {
+        cx: width / 2 + t.x,
+        cy: height / 2 + t.y,
+        width: clip.effect.width * t.scaleX,
+        height: clip.effect.height * t.scaleY,
+      });
     }
 
     // 4. Draw active Text & Subtitle clips on top of video layers

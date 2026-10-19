@@ -111,6 +111,8 @@ export class TimelineEngine {
         ? `Metin ${count} (T${count})`
         : type === 'audio'
         ? `Ses ${count} (A${count})`
+        : type === 'effect'
+        ? `Efekt ${count} (E${count})`
         : `Video ${count} (V${count})`;
 
     const newTrack: Track = {

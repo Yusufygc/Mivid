@@ -268,6 +268,165 @@ describe('FFmpegCommandBuilder', () => {
     });
   });
 
+  describe('region effects', () => {
+    const effectTrack = (clipOverrides: Partial<Clip>): Track => ({
+      id: 'te',
+      name: 'Effect',
+      type: 'effect',
+      isMuted: false,
+      isLocked: false,
+      isHidden: false,
+      clips: [
+        {
+          id: 'e1',
+          trackId: 'te',
+          assetId: 'effect-1',
+          name: 'Blur',
+          type: 'effect',
+          startTime: 1,
+          duration: 2,
+          inPoint: 0,
+          outPoint: 2,
+          speed: 1,
+          transform: { x: 100, y: -50, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, zIndex: 3 },
+          audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+          effect: { kind: 'blur', shape: 'rect', strength: 0.5, feather: 0, width: 400, height: 200 },
+          ...clipOverrides,
+        },
+      ],
+    });
+
+    const build = (effect: Track, withVideo = true) =>
+      FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        [effect, ...(withVideo ? buildVideoTrack({ startTime: 0, duration: 5 }) : [])],
+        mockAssets,
+        { outputPath: 'out.mp4' }
+      );
+
+    it('splits the frame, blurs a copy for the clip time range and overlays it through a mask', () => {
+      const { filterComplex } = build(effectTrack({}));
+      expect(filterComplex).toContain('split[fx_keep_');
+      expect(filterComplex).toContain('trim=start=1.00:end=3.00,gblur=sigma=27:steps=2,format=yuv420p');
+      expect(filterComplex).toContain('alphamerge');
+      expect(filterComplex).toContain("overlay=enable='between(t,1.00,3.00)'");
+      // the mask stream starts at 0 and is moved to the clip start
+      expect(filterComplex).toContain('setpts=PTS+1.00/TB');
+    });
+
+    it('builds the mask from a looped single frame placed at the region center offset', () => {
+      const { filterComplex } = build(effectTrack({}));
+      expect(filterComplex).toContain('color=c=white:s=400x200:r=30');
+      expect(filterComplex).toContain('loop=loop=-1:size=1:start=0');
+      expect(filterComplex).toContain("overlay=x='(W-w)/2+(100)':y='(H-h)/2+(-50)'");
+    });
+
+    it('draws an ellipse with geq and softens the edge with a padded gaussian', () => {
+      const { filterComplex } = build(
+        effectTrack({ effect: { kind: 'blur', shape: 'ellipse', strength: 0.5, feather: 0.4, width: 400, height: 200 } })
+      );
+      expect(filterComplex).toContain("geq=lum='if(lte(hypot(");
+      // feather sigma = 0.4 * min(400,200) * 0.25 = 20, margin = ceil(3 * 20) = 60
+      expect(filterComplex).toContain('pad=520:320:60:60:color=black,gblur=sigma=20');
+    });
+
+    it('uses scaled block mosaic and a solid black box for the other kinds', () => {
+      const mosaic = build(
+        effectTrack({ effect: { kind: 'pixelate', shape: 'rect', strength: 0.5, feather: 0, width: 400, height: 200 } })
+      );
+      expect(mosaic.filterComplex).toContain('scale=60:34:flags=area,scale=1920:1080:flags=neighbor');
+
+      const box = build(
+        effectTrack({ effect: { kind: 'blackbox', shape: 'rect', strength: 1, feather: 0, width: 400, height: 200 } })
+      );
+      expect(box.filterComplex).toContain('drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill');
+    });
+
+    it('moves and scales the region with clip-local keyframes', () => {
+      const { filterComplex } = build(
+        effectTrack({ keyframes: { x: [kf(0, -100), kf(2, 100)], scale: [kf(0, 1), kf(2, 2)] } })
+      );
+      expect(filterComplex).toContain("scale=w='max(2,trunc(400*(if(lt(t,0),1,");
+      expect(filterComplex).toContain("overlay=x='(W-w)/2+(if(lt(t,0),-100,");
+    });
+
+    it('places the effect after the video layers and before the text, and never asks for media or audio', () => {
+      const { filterComplex, args } = build(effectTrack({}));
+      const overlayVideo = filterComplex.indexOf('[comp_0]');
+      const effect = filterComplex.indexOf('fx_out_');
+      expect(overlayVideo).toBeGreaterThan(-1);
+      expect(effect).toBeGreaterThan(overlayVideo);
+      // only the video file is an input, and the effect clip adds no audio stream
+      expect(args.filter((a) => a === '-i')).toHaveLength(1);
+      expect(filterComplex.match(/atrim=/g)).toHaveLength(1);
+    });
+
+    it('skips hidden effect tracks', () => {
+      const hidden = { ...effectTrack({}), isHidden: true };
+      expect(build(hidden).filterComplex).not.toContain('gblur');
+    });
+  });
+
+  describe('fit and blurred backdrop', () => {
+    const vertical = { ...mockProject, width: 1080, height: 1920 };
+    const buildVertical = (overrides: Partial<Clip>) =>
+      FFmpegCommandBuilder.buildExportCommand(vertical, buildVideoTrack(overrides), mockAssets, {
+        outputPath: 'out.mp4',
+      }).filterComplex;
+
+    it('keeps the single stretch scale for clips without a fit', () => {
+      expect(buildVertical({})).toContain('[clip_0]scale=1080:1920[scaled_0]');
+    });
+
+    it('letterboxes with transparent bars for contain', () => {
+      expect(buildVertical({ fit: 'contain' })).toContain(
+        '[clip_0]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0[scaled_0]'
+      );
+    });
+
+    it('crops to the frame for cover and scales further when the clip is scaled', () => {
+      const graph = buildVertical({
+        fit: 'cover',
+        transform: { x: 0, y: 0, scaleX: 0.5, scaleY: 0.5, rotation: 0, opacity: 1, zIndex: 1 },
+      });
+      expect(graph).toContain('force_original_aspect_ratio=increase,crop=1080:1920,scale=540:960');
+    });
+
+    it('animates the scale of fitted footage from the fitted frame size', () => {
+      const graph = buildVertical({ fit: 'contain', keyframes: { scale: [kf(0, 1), kf(2, 0.5)] } });
+      expect(graph).toContain("pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black@0,scale=w='max(2,trunc(iw*(");
+    });
+
+    it('lays a blurred, cover-fitted copy under the clip for its time range', () => {
+      const graph = buildVertical({ fit: 'contain', backdropBlur: 0.5 });
+      expect(graph).toContain('split=2[clip_src_0][clip_bg_src_0]');
+      expect(graph).toContain('[clip_bg_src_0]scale=1242:2208:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=');
+      expect(graph).toContain("[base_v][clip_bg_0]overlay=enable='between(t,2.00,7.00)'[clip_bg_out_0]");
+      // the clip itself is composited over the backdrop, not directly over the base
+      expect(graph).toContain('[clip_bg_out_0][scaled_0]overlay=');
+      expect(graph).not.toContain('[base_v][scaled_0]');
+    });
+
+    it('does not add a backdrop when it is off', () => {
+      expect(buildVertical({ fit: 'contain' })).not.toContain('clip_bg_');
+    });
+  });
+
+  describe('images', () => {
+    it('does not ask an image for an audio stream', () => {
+      const imageAsset: MediaAsset = { ...mockAsset, id: 'img', path: 'C:/media/pic.png', type: 'image' };
+      const tracks = buildVideoTrack({ assetId: 'img', type: 'image' });
+      const { filterComplex } = FFmpegCommandBuilder.buildExportCommand(
+        mockProject,
+        tracks,
+        new Map([['img', imageAsset]]),
+        { outputPath: 'out.mp4' }
+      );
+      expect(filterComplex).not.toContain('atrim');
+      expect(filterComplex).not.toContain('amix');
+    });
+  });
+
   describe('audio fades and denoise', () => {
     it('adds afade and afftdn before the volume filter', () => {
       const tracks = buildVideoTrack({

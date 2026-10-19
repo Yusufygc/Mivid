@@ -1,0 +1,53 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`export guard fixtures > uses only the filters and flags the guard allows 1`] = `
+[
+  "adelay",
+  "afade",
+  "afftdn",
+  "alphamerge",
+  "amix",
+  "asetpts",
+  "atempo",
+  "atrim",
+  "chromakey",
+  "color",
+  "colorchannelmixer",
+  "crop",
+  "drawbox",
+  "drawtext",
+  "eq",
+  "fade",
+  "format",
+  "gblur",
+  "geq",
+  "loop",
+  "null",
+  "overlay",
+  "pad",
+  "rotate",
+  "scale",
+  "select",
+  "setpts",
+  "split",
+  "trim",
+  "volume",
+]
+`;
+
+exports[`export guard fixtures > uses only the filters and flags the guard allows 2`] = `
+[
+  "-b:a",
+  "-c:a",
+  "-c:v",
+  "-filter_complex",
+  "-framerate",
+  "-i",
+  "-loop",
+  "-map",
+  "-pix_fmt",
+  "-preset",
+  "-t",
+  "-y",
+]
+`;

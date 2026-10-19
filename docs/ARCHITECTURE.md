@@ -63,7 +63,22 @@ src/
 │   ├── project.ts
 │   └── timeline.ts
 └── utils/                  # Yardımcı fonksiyonlar (formatTime, math, id)
+
+src-tauri/src/
+├── lib.rs                  # Tauri komutları: select_media_files, open_project_dialog, select_export_path,
+│                           #   run_ffmpeg_export, probe_media, open_file_location
+├── media_access.rs         # Kullanıcının yerel diyalogla seçtiği dosyaların izin listesi (asset kapsamı + export hedefi),
+│                           #   app data klasöründe kalıcı (media_allowlist.json)
+└── export_guard.rs         # run_ffmpeg_export argüman doğrulayıcı (bayrak/filtre beyaz listesi, yol kuralları)
+src-tauri/tests/fixtures/export_args.json   # builder çıktısından üretilen sözleşme dosyası (guardFixtures.test.ts yazar)
 ```
+
+### Masaüstü güvenlik modeli
+- **CSP açık** (`tauri.conf.json` `csp` / `devCsp`): betik yalnızca `'self'`, ağ yalnızca IPC ve asset protokolü.
+- **Asset protokolü kapsamı boş** (`scope: []`): dosya, kullanıcı `select_media_files` ya da `open_project_dialog` ile seçince Rust tarafında kapsama eklenir (`media_access::grant`). Betikten çağrılabilen "izin ver" komutu yoktur.
+- **Export çıktısı** yalnızca `select_export_path` kayıt diyaloğunda seçilen dosyaya yazılır; `run_ffmpeg_export` `output_path` almaz.
+- **Argüman doğrulama** (`export_guard::validate`): bilinen bayraklar, izin listesindeki `-i` dosyaları, son argüman = seçilen çıktı, `-filter_complex` içinde yalnızca oluşturucunun kullandığı filtreler; `movie`, `subtitles`, `textfile=` gibi dosya okuyanlar ve `C:/Windows/Fonts` dışı `fontfile` reddedilir. Oluşturucuya yeni filtre/bayrak eklenince `guardFixtures.test.ts` snapshot'ı ve `ALLOWED_FILTERS` birlikte güncellenir.
+- **Probe**: `probe_media` yalnızca izin listesindeki dosyayı `ffmpeg -i` ile sorar (eskiden export komutu hata metni için kötüye kullanılıyordu).
 
 ---
 

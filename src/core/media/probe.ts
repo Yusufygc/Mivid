@@ -12,16 +12,17 @@ export const parseHasAudio = (ffmpegOutput: string): boolean | undefined => {
 };
 
 /**
- * Asks the desktop app's FFmpeg about a file. `ffmpeg -i file` without an output exits with an error that carries
- * the stream listing, and the existing `run_ffmpeg_export` command returns that text, so no new Rust command is needed.
+ * Asks the desktop app's FFmpeg about a file (the `probe_media` command, which only accepts files picked in a native
+ * dialog). Undefined when the answer is unknown: FFmpeg missing, the file unreadable or not picked through a dialog.
  */
 export const probeHasAudio = async (path: string): Promise<boolean | undefined> => {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('run_ffmpeg_export', { args: ['-hide_banner', '-i', path], outputPath: path, totalDuration: 1 });
-    return undefined; // FFmpeg unexpectedly succeeded, nothing to read
+    const hasAudio = await invoke<boolean | null>('probe_media', { path });
+    return hasAudio ?? undefined;
   } catch (error) {
-    return parseHasAudio(String(error));
+    Logger.warn('probe', `Could not probe ${path}`, error);
+    return undefined;
   }
 };
 

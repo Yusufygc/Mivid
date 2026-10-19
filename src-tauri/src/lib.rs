@@ -1,7 +1,16 @@
+mod export_guard;
+mod media_access;
+
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use export_guard::Policy;
+use media_access::MediaAccess;
+
+/// Project files bigger than this are not read (a real project is a few hundred kilobytes)
+const MAX_PROJECT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 fn find_ffmpeg_executable() -> String {
     let candidate_paths = [
@@ -13,7 +22,6 @@ fn find_ffmpeg_executable() -> String {
 
     for path_str in candidate_paths {
         if Path::new(path_str).exists() {
-            println!("[Tauri IPC] Found FFmpeg at: {}", path_str);
             return path_str.to_string();
         }
     }
@@ -28,32 +36,96 @@ struct ExportProgressPayload {
     status: String,
 }
 
+#[derive(serde::Serialize)]
+struct OpenedProject {
+    path: String,
+    text: String,
+}
+
+fn path_strings(paths: &[PathBuf]) -> Vec<String> {
+    paths.iter().map(|p| p.to_string_lossy().to_string()).collect()
+}
+
+/// Native file picker. The chosen files are the only ones the webview may open (see `media_access`).
 #[tauri::command]
-fn select_media_files() -> Vec<String> {
-    let files = rfd::FileDialog::new()
+fn select_media_files(app: AppHandle, access: State<'_, MediaAccess>) -> Vec<String> {
+    let picked = rfd::FileDialog::new()
         .add_filter("Tüm Medyalar", &["mp4", "mov", "avi", "mkv", "webm", "mp3", "wav", "aac", "m4a", "ogg", "flac", "png", "jpg", "jpeg", "webp"])
         .add_filter("Videolar (*.mp4, *.mov, *.avi, *.mkv)", &["mp4", "mov", "avi", "mkv", "webm"])
         .add_filter("Sesler (*.mp3, *.wav, *.aac, *.m4a)", &["mp3", "wav", "aac", "m4a", "ogg", "flac"])
         .add_filter("Resimler (*.png, *.jpg, *.jpeg)", &["png", "jpg", "jpeg", "webp"])
         .set_title("Medya Dosyası Seçin")
-        .pick_files();
+        .pick_files()
+        .unwrap_or_default();
 
-    match files {
-        Some(paths) => paths
-            .into_iter()
-            .map(|p| p.to_string_lossy().to_string())
-            .collect(),
-        None => Vec::new(),
+    media_access::grant(&app, &access, picked.clone());
+    let accepted: Vec<PathBuf> = picked
+        .into_iter()
+        .filter(|p| access.is_allowed(&p.to_string_lossy()))
+        .collect();
+    path_strings(&accepted)
+}
+
+/// Native "open project" dialog. Returns the project text and opens the media files the project lists.
+#[tauri::command]
+fn open_project_dialog(app: AppHandle, access: State<'_, MediaAccess>) -> Result<Option<OpenedProject>, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter("Mivid projesi", &["json"])
+        .set_title("Proje Aç")
+        .pick_file()
+    else {
+        return Ok(None);
+    };
+
+    let size = std::fs::metadata(&path)
+        .map_err(|e| format!("Proje dosyası okunamadı: {}", e))?
+        .len();
+    if size > MAX_PROJECT_FILE_BYTES {
+        return Err("Proje dosyası çok büyük.".to_string());
     }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("Proje dosyası okunamadı: {}", e))?;
+
+    media_access::grant(&app, &access, media_access::asset_paths_from_project(&text));
+    Ok(Some(OpenedProject {
+        path: path.to_string_lossy().to_string(),
+        text,
+    }))
+}
+
+/// Native "save as" dialog for the exported video. The export writes only to the file chosen here.
+#[tauri::command]
+fn select_export_path(access: State<'_, MediaAccess>, suggested_name: Option<String>) -> Option<String> {
+    let name: String = suggested_name
+        .unwrap_or_else(|| "export.mp4".to_string())
+        .chars()
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+
+    let picked = rfd::FileDialog::new()
+        .add_filter("Video", &["mp4", "mov", "webm"])
+        .set_file_name(name.as_str())
+        .set_title("Dışa Aktarma Konumu")
+        .save_file()?;
+
+    let has_video_extension = picked
+        .extension()
+        .map(|e| ["mp4", "mov", "webm"].contains(&e.to_string_lossy().to_lowercase().as_str()))
+        .unwrap_or(false);
+    let picked = if has_video_extension { picked } else { picked.with_extension("mp4") };
+
+    access.set_export_target(picked.clone());
+    Some(picked.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-fn open_file_location(path: String) -> Result<(), String> {
+fn open_file_location(access: State<'_, MediaAccess>, path: String) -> Result<(), String> {
+    if !access.may_reveal(&path) {
+        return Err("Yalnızca dışa aktarılan veya seçilen dosyaların konumu açılabilir.".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     {
         let win_path = path.replace('/', "\\");
-        println!("[Tauri IPC] Opening explorer with file selected: {}", win_path);
-        
         // /select,<path> highlights the specific file in its folder
         Command::new("explorer")
             .arg(format!("/select,{}", win_path))
@@ -74,22 +146,55 @@ fn open_file_location(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether FFmpeg's stream listing (`ffmpeg -i file`) has an audio stream; None when the text is no stream listing
+fn parse_has_audio(ffmpeg_output: &str) -> Option<bool> {
+    let streams: Vec<&str> = ffmpeg_output.lines().filter(|l| l.contains("Stream #")).collect();
+    if streams.is_empty() {
+        return None;
+    }
+    Some(streams.iter().any(|l| l.contains(": Audio:")))
+}
+
+/// Asks FFmpeg about a media file the user picked: Some(true/false) = has / has no audio, None = could not tell
+#[tauri::command]
+async fn probe_media(access: State<'_, MediaAccess>, path: String) -> Result<Option<bool>, String> {
+    if !access.is_allowed(&path) {
+        return Err("Bu dosya medya havuzuna dosya diyaloğuyla eklenmemiş.".to_string());
+    }
+    let output = Command::new(find_ffmpeg_executable())
+        .args(["-hide_banner", "-i", path.as_str()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("FFmpeg çalıştırılamadı: {}", e))?;
+    Ok(parse_has_audio(&String::from_utf8_lossy(&output.stderr)))
+}
+
 #[tauri::command]
 async fn run_ffmpeg_export(
     app: AppHandle,
+    access: State<'_, MediaAccess>,
     args: Vec<String>,
-    output_path: String,
     total_duration: Option<f64>,
 ) -> Result<String, String> {
+    let output = access
+        .export_target()
+        .ok_or_else(|| "Önce dışa aktarma konumunu seçin.".to_string())?;
+    let allowed_inputs = access.allowed_keys();
+    export_guard::validate(
+        &args,
+        &Policy {
+            allowed_inputs: &allowed_inputs,
+            output: &output,
+            check_files_exist: true,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
     let ffmpeg_bin = find_ffmpeg_executable();
-    println!("[Tauri IPC] Using FFmpeg executable: {}", ffmpeg_bin);
-    println!("[Tauri IPC] Output path: {}", output_path);
-    println!("[Tauri IPC] Total duration: {:?}", total_duration);
-    println!("[Tauri IPC] Arguments: {:?}", args);
 
     // Ensure output directory exists
-    let path = Path::new(&output_path);
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = output.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Kayıt klasörü oluşturulamadı ({}): {}", parent.display(), e))?;
@@ -162,17 +267,37 @@ async fn run_ffmpeg_export(
                 status: "Render Başarıyla Tamamlandı!".to_string(),
             },
         );
-        println!("[Tauri IPC] Export succeeded!");
-        Ok(output_path)
+        Ok(output.to_string_lossy().to_string())
     } else {
         eprintln!("[Tauri IPC] Export failed with stderr:\n{}", all_stderr);
         Err(format!("FFmpeg Render Hatası:\n{}", all_stderr))
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use export_guard::normalize_path;
+
+    #[test]
+    fn reads_audio_from_a_stream_listing() {
+        let with_audio = "Input #0, mov\n  Stream #0:0: Video: h264\n  Stream #0:1(und): Audio: aac, 44100 Hz\n";
+        let silent = "Input #0, mov\n  Stream #0:0: Video: h264\n";
+        assert_eq!(parse_has_audio(with_audio), Some(true));
+        assert_eq!(parse_has_audio(silent), Some(false));
+        assert_eq!(parse_has_audio("No such file or directory"), None);
+    }
+
+    #[test]
+    fn path_comparison_ignores_slash_style_and_case() {
+        assert_eq!(normalize_path("C:\\Users\\X\\a.MP4"), normalize_path("c:/users/x/a.mp4"));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(MediaAccess::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -181,11 +306,16 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // Files the user picked in earlier sessions stay previewable (autosave recovery)
+            media_access::restore(app.handle(), &app.state::<MediaAccess>());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             select_media_files,
+            open_project_dialog,
+            select_export_path,
             run_ffmpeg_export,
+            probe_media,
             open_file_location
         ])
         .run(tauri::generate_context!())

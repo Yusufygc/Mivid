@@ -7,7 +7,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 ## 1. Şu anki durum
 
 - `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, renk), `ea73c95` (blur sistemi). **Bu oturumun son işleri henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
-- Testler: 250 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- Testler: 257 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
 - **Ürün adı Mivid** (arayüz başlığı, `index.html`, `tauri.conf.json`, README/docs, `package.json`). `tauri.conf.json` derleme zamanında gömüldüğü için eski `app.exe`'nin pencere başlığı yeniden derlenene kadar "CapCut Clone" kalır; `npm run desktop` ikisini de tanır.
 - **Karar:** bu projede REA / CapCut incelemesi yok; özgün, işi kolaylaştıran özellikler yapılıyor (hafızada kayıtlı).
 - **Commit bekleyen işler** (hepsi tarayıcıda gerçek fare/klavye ile, export ayrıca gerçek ffmpeg ile denendi):
@@ -18,6 +18,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
   - **Sessiz medya:** `core/media/probe.ts`, `MediaAsset.hasAudio`, `ExportModal` export öncesi probe
   - **Kanal üstünlüğü düzeltmesi:** `TimelineEngine.getActiveClipsAtTime` ve export `layers` (üst kanal üstte, `zIndex` önce)
   - **QA düzeltme turu:** metin export'unda gerçek yazı tipi dosyası (`fonts.ts`), yeni klip V1'e, yeniden boyutlanır timeline ve dar pencere düzeni, önizleme yükleme göstergesi, Oto keyframe, FPS seçici. Gerçek Reels kaynaklarıyla yeniden denendi: başlık Impact kalın çıktı, bölge blur keyframe ile LCD'yi takip etti, 60 fps export 36.8 sn.
+  - **Güvenlik (denetim Bulgu 1-2), commit bekliyor, Rust DERLENMEDİ:** `src-tauri/src/export_guard.rs`, `media_access.rs`, `lib.rs` yeni komutlar, `tauri.conf.json` CSP + `scope: []`, `ExportModal` "Konum Seç", `probe.ts`/`projectIO.ts` Tauri yolları. TS tarafı (257 test, tsc, build) yeşil. **Sıradaki adım:** VS Installer'da "C++ ile masaüstü geliştirme" iş yükünü kur, sonra `cd src-tauri; cargo test` (guard + media_access + fixture kontratı) ve `npm run desktop` ile şu elle denemeler: medya içe aktar ve önizle, uygulamayı kapat/aç ve otomatik kaydı kurtar (önizleme çalışmalı), proje aç, Konum Seç + export + "Klasörde göster", sessiz medya probe'u, devTools'ta `invoke('run_ffmpeg_export', {args:['-y','-i','C:/Windows/win.ini','x.mp4'], totalDuration:1})` reddedilmeli ve `fetch('asset://localhost/C:/Windows/win.ini')` açılmamalı. CSP bir kaynağı kesiyorsa konsolda "Refused to ..." görünür; `tauri.conf.json` `csp` / `devCsp` güncellenir.
 - **Yapılmayanlar:** karışım modları (FFmpeg `blend` alfa'yı doğru karıştırmadığı için preview/export eşleşmiyor), çoklu seçimde birlikte kırpma.
 
 ## 2. Ortam notları

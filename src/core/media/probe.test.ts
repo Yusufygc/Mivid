@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseHasAudio } from './probe';
 
 // Shapes copied from real `ffmpeg -hide_banner -i file` output
@@ -30,5 +30,37 @@ describe('parseHasAudio', () => {
 
   it('does not mistake the word Audio elsewhere for a stream', () => {
     expect(parseHasAudio(`${VIDEO_ONLY}\nmetadata: title: Audio: demo`)).toBe(false);
+  });
+});
+
+describe('probeHasAudio', () => {
+  it('asks the probe_media command and turns null into unknown', async () => {
+    const calls: unknown[][] = [];
+    const answers = [true, false, null];
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: async (...args: unknown[]) => {
+        calls.push(args);
+        return answers.shift();
+      },
+    }));
+    const { probeHasAudio } = await import('./probe');
+
+    expect(await probeHasAudio('C:/m/a.mp4')).toBe(true);
+    expect(await probeHasAudio('C:/m/b.mp4')).toBe(false);
+    expect(await probeHasAudio('C:/m/c.mp4')).toBeUndefined();
+    expect(calls[0]).toEqual(['probe_media', { path: 'C:/m/a.mp4' }]);
+    vi.doUnmock('@tauri-apps/api/core');
+  });
+
+  it('is unknown when the command is refused', async () => {
+    vi.doMock('@tauri-apps/api/core', () => ({
+      invoke: async () => {
+        throw new Error('Bu dosya medya havuzuna dosya diyaloğuyla eklenmemiş.');
+      },
+    }));
+    vi.resetModules();
+    const { probeHasAudio } = await import('./probe');
+    expect(await probeHasAudio('C:/m/a.mp4')).toBeUndefined();
+    vi.doUnmock('@tauri-apps/api/core');
   });
 });

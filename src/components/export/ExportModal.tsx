@@ -7,6 +7,9 @@ import { FFmpegCommandBuilder } from '@/core/export/ffmpegBuilder';
 import { Logger } from '@/core/logger';
 import { X, Download, Terminal, CheckCircle2, AlertTriangle, Copy, Check, Info, FolderOpen } from 'lucide-react';
 
+/** Stands in for the output file in the command preview of the web mode, where nothing is written */
+const WEB_PREVIEW_OUTPUT = 'output.mp4';
+
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,9 +20,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const { tracks } = useTimelineStore();
   const { assets } = useAssetStore();
 
-  const [outputPath, setOutputPath] = useState<string>(
-    `D:/1KodCalismalari/Projeler/VIBE_CODING_UYGULAMA_DENEMELERI/P023-KurguEditProgrami/${project.name.replace(/\s+/g, '_')}_rendered.mp4`
-  );
+  // Desktop: the file the user picked in the native save dialog (the Rust export writes only there). Empty until picked.
+  const [pickedOutputPath, setPickedOutputPath] = useState<string>('');
   const [preset, setPreset] = useState<'ultrafast' | 'fast' | 'medium'>('fast');
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -29,6 +31,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [commandInfo, setCommandInfo] = useState<{ args: string[]; filterComplex: string; actualDuration: number } | null>(null);
   const [isTauriEnv, setIsTauriEnv] = useState<boolean>(false);
   const [exportFinished, setExportFinished] = useState(false);
+  const outputPath = pickedOutputPath || WEB_PREVIEW_OUTPUT;
 
   useEffect(() => {
     const hasTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -71,6 +74,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   }
   const estimatedDuration = maxClipEnd > 0 ? maxClipEnd.toFixed(1) : project.duration.toFixed(1);
 
+  const handleChooseOutput = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const picked = await invoke<string | null>('select_export_path', {
+        suggestedName: `${project.name.trim().replace(/\s+/g, '_') || 'Adsiz_Proje'}_rendered.mp4`,
+      });
+      if (picked) {
+        setPickedOutputPath(picked);
+        setErrorMessage(null);
+      }
+    } catch (err) {
+      Logger.error('ExportModal', 'Could not pick the export location', err);
+      setErrorMessage((err as Error).message || String(err));
+    }
+  };
+
   const handleGeneratePreview = () => {
     try {
       const result = FFmpegCommandBuilder.buildExportCommand(project, tracks, assets, {
@@ -106,7 +125,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('run_ffmpeg_export', {
           args: result.args,
-          outputPath: outputPath,
           totalDuration: result.actualDuration,
         });
 
@@ -203,12 +221,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           <div className="space-y-3">
             <div>
               <label className="text-xs text-gray-300 block mb-1">Kayıt Yolu (Output File Path)</label>
-              <input
-                type="text"
-                value={outputPath}
-                onChange={(e) => setOutputPath(e.target.value)}
-                className="w-full bg-surface-light px-3 py-2 rounded-lg text-xs text-gray-200 border border-surface-border focus:border-primary outline-none font-mono"
-              />
+              <div className="flex items-stretch gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={isTauriEnv ? pickedOutputPath : WEB_PREVIEW_OUTPUT}
+                  placeholder="Henüz konum seçilmedi"
+                  className="flex-1 min-w-0 bg-surface-light px-3 py-2 rounded-lg text-xs text-gray-200 border border-surface-border outline-none font-mono"
+                />
+                {isTauriEnv && (
+                  <button
+                    onClick={handleChooseOutput}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-3 rounded-lg bg-surface-light text-xs text-gray-200 border border-surface-border hover:border-primary/60 disabled:opacity-50 transition-all"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    <span>Konum Seç</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -316,7 +347,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           </button>
           <button
             onClick={handleStartExport}
-            disabled={isExporting}
+            disabled={isExporting || (isTauriEnv && !pickedOutputPath)}
+            title={isTauriEnv && !pickedOutputPath ? 'Önce kayıt konumunu seçin' : undefined}
             className="flex items-center gap-2 px-5 py-2 rounded-lg bg-gradient-to-r from-primary to-primary-hover text-black font-semibold text-xs shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all"
           >
             <Download className="w-4 h-4" />

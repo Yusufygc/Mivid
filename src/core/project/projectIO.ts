@@ -77,8 +77,25 @@ export const parseProjectText = (text: string): ProjectFile => {
 
 export type OpenOutcome = { status: 'opened'; file: ProjectFile; fileName: string } | { status: 'cancelled' };
 
+const isTauriApp = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const lastPathSegment = (path: string): string => path.split(/[\\/]/).pop() || path;
+
+/**
+ * Desktop app: the native open dialog (Rust). Besides the text it makes the files the project lists
+ * available to the preview (the asset protocol only opens files the user picked in a native dialog).
+ */
+const openProjectNative = async (): Promise<OpenOutcome> => {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const opened = await invoke<{ path: string; text: string } | null>('open_project_dialog');
+  if (!opened) return { status: 'cancelled' };
+  return { status: 'opened', file: parseProjectText(opened.text), fileName: lastPathSegment(opened.path) };
+};
+
 /** Lets the user pick a project file and parses it */
 export const openProjectFile = async (): Promise<OpenOutcome> => {
+  if (isTauriApp()) return openProjectNative();
+
   const picker = (window as PickerWindow).showOpenFilePicker;
 
   if (picker) {

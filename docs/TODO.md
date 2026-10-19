@@ -6,7 +6,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ## 🚀 Faz 1: Temel Altyapı & Mimarinin Kurulması
 - [x] Tauri v2 + React (TypeScript + Vite) iskeletinin oluşturulması
-- [x] Tailwind CSS, PostCSS ve CapCut renk paletinin yapılandırılması
+- [x] Tailwind CSS, PostCSS ve koyu tema renk paletinin yapılandırılması
 - [x] Vitest test ortamının entegrasyonu (`vitest.config.ts`, `setupTests.ts`)
 - [x] Dokümantasyon altyapısının kurulması (`ARCHITECTURE.md`, `RULES.md`, `TODO.md`, `README.md`)
 - [x] Merkezi Seviyeli Loglama Servisinin kodlanması (`src/core/logger/`)
@@ -33,7 +33,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ---
 
-## 🎨 Faz 3: CapCut Tarzı Modern Arayüz & Yüksek Performanslı Önizleme (Preview Engine)
+## 🎨 Faz 3: Modern Arayüz & Yüksek Performanslı Önizleme (Preview Engine)
 - [x] **Header Bar (`src/components/header/Header.tsx`):**
   - [x] Proje adı düzenleme
   - [x] Undo / Redo butonları

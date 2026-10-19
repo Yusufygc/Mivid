@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "CapCutClone",
+  "productName": "Mivid",
   "version": "0.1.0",
   "identifier": "com.tauri.dev",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "CapCut Clone - Video Editor",
+        "title": "Mivid - Video Editor",
         "width": 1280,
         "height": 720,
         "center": true,

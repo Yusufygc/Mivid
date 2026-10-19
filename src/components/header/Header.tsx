@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({ onExportClick }) => {
           <div className="p-1.5 bg-primary/10 rounded-lg text-primary border border-primary/20">
             <Film className="w-5 h-5" />
           </div>
-          <span>CAPCUT <span className="text-white text-xs font-normal px-2 py-0.5 bg-surface-light rounded">PRO</span></span>
+          <span>MIVID</span>
         </div>
 
         <div className="h-5 w-[1px] bg-surface-border" />

@@ -1,6 +1,6 @@
-# CapCut Pro - Masaüstü Video Kurgu & Editör
+# Mivid - Masaüstü Video Kurgu & Editör
 
-CapCut benzeri, modern, hafif ve genişletilebilir bir masaüstü video düzenleme uygulaması. **Tauri v2 + React 19 + TypeScript + Vite + Tailwind CSS + FFmpeg** teknolojileriyle geliştirilmiştir.
+Modern, hafif ve genişletilebilir bir masaüstü video düzenleme uygulaması. **Tauri v2 + React 19 + TypeScript + Vite + Tailwind CSS + FFmpeg** teknolojileriyle geliştirilmiştir.
 
 ---
 

@@ -8,6 +8,7 @@ Son güncelleme: 2026-10-19. Dal: `feature`. Bu belge, bir sonraki oturumda nere
 
 - `feature` dalı. Commit'ler: `6f2a263` (tutamaçlar, rotation, proje kaydet/aç, timeline), `d86218d` (ses fade, renk), `ea73c95` (blur sistemi). **Bu oturumun son işleri henüz commit edilmedi** (aşağıda). Hiçbir şey push edilmedi.
 - Testler: 229 birim testi geçiyor (`npm run test`), `npx tsc -b` ve `npm run build` temiz.
+- **Ürün adı Mivid** (arayüz başlığı, `index.html`, `tauri.conf.json`, README/docs, `package.json`). `tauri.conf.json` derleme zamanında gömüldüğü için eski `app.exe`'nin pencere başlığı yeniden derlenene kadar "CapCut Clone" kalır; `npm run desktop` ikisini de tanır.
 - **Karar:** bu projede REA / CapCut incelemesi yok; özgün, işi kolaylaştıran özellikler yapılıyor (hafızada kayıtlı).
 - **Commit bekleyen işler** (hepsi tarayıcıda gerçek fare/klavye ile, export ayrıca gerçek ffmpeg ile denendi):
   - **Resim / sticker:** `previewEngine.getOrCreateImageElement`, export `-loop 1`, klipte döşeme küçük resmi

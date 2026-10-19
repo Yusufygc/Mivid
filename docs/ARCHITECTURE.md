@@ -1,6 +1,6 @@
 # Sistem Mimarisi & Modüler Tasarım (ARCHITECTURE.md)
 
-Bu belge, **CapCut Video Editör** masaüstü uygulamasının katmanlarını, veri akışını ve modül organizasyonunu detaylandırır.
+Bu belge, **Mivid** masaüstü uygulamasının katmanlarını, veri akışını ve modül organizasyonunu detaylandırır.
 
 ---
 

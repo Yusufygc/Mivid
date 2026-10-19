@@ -61,7 +61,9 @@ try {
   $handle = [IntPtr]::Zero
   for ($i = 0; $i -lt 40 -and $handle -eq [IntPtr]::Zero; $i++) {
     Start-Sleep -Milliseconds 250
-    $handle = [WinTools]::FindTitled([uint32]$app.Id, 'CapCut Clone')
+    # The window title comes from tauri.conf.json at build time: a shell built before the rename is still titled 'CapCut Clone'
+    $handle = [WinTools]::FindTitled([uint32]$app.Id, 'Mivid')
+    if ($handle -eq [IntPtr]::Zero) { $handle = [WinTools]::FindTitled([uint32]$app.Id, 'CapCut Clone') }
   }
 
   if ($handle -ne [IntPtr]::Zero) {

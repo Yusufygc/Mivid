@@ -1,6 +1,6 @@
 # Proje Kuralları & Geliştirme Standartları (RULES.md)
 
-Bu belge, **CapCut Video Editör** projesinin kodlama standartlarını, tasarım prensiplerini ve kalite yönergelerini içerir.
+Bu belge, **Mivid** projesinin kodlama standartlarını, tasarım prensiplerini ve kalite yönergelerini içerir.
 
 ---
 

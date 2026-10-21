@@ -28,11 +28,12 @@ Modern, hafif ve genişletilebilir bir masaüstü video düzenleme uygulaması. 
 - ⚡ **FFmpeg Dışa Aktarma Motoru (Export Engine):**
   - Zaman çizelgesindeki tüm klipleri (`setpts` ile saniyesi saniyesine), metinleri (`drawtext` filtresi) ve sesleri (`adelay`) tek bir karmaşık `filter_complex` komutuna dönüştürür.
   - Hızlı ve kayıpsız H.264 / AAC render çıktısı.
+- 🆕 **Kurgu araçları:** keyframe animasyonu (konum, ölçek, opaklık, döndürme) ve Oto keyframe, klip hızı, geçişler, renk ayarı, ses fade/gürültü azaltma, chroma key, dondurma karesi, resim/sticker, kolay blur (bölge blur/mozaik/siyah kutu), bulanık arka plan dolgusu, proje kaydet/aç ve otomatik kayıt.
 - 🏗️ **Yazılım Mimarisi & Standartlar:**
   - **SOLID, Clean Code, DRY, KISS** ilkeleri.
   - Undo / Redo komut deseni (`CommandManager`).
   - Seviyeli Loglama Mekanizması (`LoggerService`).
-  - Vitest ile %100 birim test kapsamı.
+  - Vitest ile çekirdek ve store'larda 257 birim testi (arayüz bileşenlerinde test yok, bkz. denetim raporu).
 
 ---
 
@@ -83,6 +84,10 @@ npm run build
 
 ## 📚 Dokümantasyon
 
-- [Sistem Mimarisi](file:///docs/ARCHITECTURE.md)
-- [Geliştirme Kuralları & Standartlar](file:///docs/RULES.md)
-- [Yapılanlar ve Görev Listesi](file:///docs/TODO.md)
+Dokümantasyon `docs/wiki/` altındaki wiki'dedir; harita: [docs/wiki/index.md](docs/wiki/index.md).
+
+- [Sistem Mimarisi](docs/wiki/architecture.md)
+- [Çalışma Kuralları ve Standartlar](docs/wiki/rules.md)
+- [Yol Haritası ve Görev Listesi](docs/wiki/roadmap.md)
+- [Sonraki Oturum Planı](docs/wiki/next-session.md)
+- [Denetim Raporu](docs/wiki/audit-report.md)

@@ -1,5 +1,7 @@
 # Mivid Sistem Denetim Raporu
 
+Bulgu durumları [[roadmap]] Faz 9'da, sonraki adım [[next-session]]'da. Konu sayfaları: [[architecture]], [[desktop-security]], [[export-pipeline]], [[preview-engine]], [[timeline-model]]. Giriş: [[index]].
+
 Tarih: 2026-10-19. Dal: `feature` (son commit `3723a25`). Şablon: `V2-GenelSablon.md`. Süreç referansı: `AI-Gelistirme-Metodolojisi.md`.
 
 ## Tarama planı ve yöntem
@@ -242,7 +244,7 @@ await invoke('run_ffmpeg_export', { args: ['-hide_banner', '-i', path], outputPa
 - **Persona:** SRE / DevOps
 - **Dosya/Konum:** `src/core/logger/index.ts:12-60`; `ExportModal.tsx:136`, `MediaPool.tsx:31`, `Timeline.tsx:559`, `chromaRenderer.ts:46`, `previewEngine.ts:96,525,536`, `useAssetStore.ts:84,128,237`; `lib.rs:16,55,85-88,165`
 - **Kategori:** Production
-- **Sorun:** `Logger` 1000 girişlik bellek tamponu; dosyaya yazmıyor, seviye başlangıçta `DEBUG` sabit. `RULES.md` §2 `console.log` yerine `Logger` kullanımını şart koşuyor ama 10 yerde `console.warn/error` var. Rust `println!` ile her export'ta tüm FFmpeg argümanlarını (kullanıcının dosya yolları) yazıyor.
+- **Sorun:** `Logger` 1000 girişlik bellek tamponu; dosyaya yazmıyor, seviye başlangıçta `DEBUG` sabit. `RULES.md` (şimdi [[rules]]) §2 `console.log` yerine `Logger` kullanımını şart koşuyor ama 10 yerde `console.warn/error` var. Rust `println!` ile her export'ta tüm FFmpeg argümanlarını (kullanıcının dosya yolları) yazıyor.
 - **Etki:** Uygulama çökünce (Tauri penceresi kapanınca) tampon yok olur; kullanıcı hata bildirdiğinde elde iz yoktur. Dosya yolları (kullanıcı adı içerir) log çıktısına girer.
 - **Çözüm:** Logger'a `tauri-plugin-log` hedefi (dosya) bağla; `console.*` çağrılarını `Logger.warn` ile değiştir; Rust'ta `println!` yerine `log::info!` ve yolları kısalt.
 - **Düzeltme Eforu:** S
@@ -279,6 +281,7 @@ await invoke('run_ffmpeg_export', { args: ['-hide_banner', '-i', path], outputPa
 - **Bağımlılık:** Bulgu 8 (testsiz alan); düzeltmeden önce sürükleme hesabını saf fonksiyona çıkarıp test et.
 
 ### [🟡] 17. Dokümantasyon çelişkileri
+- **Durum (2026-10-21):** Çözüldü. Eski satırlar silindi, sayfalar güncel koda göre yeniden yazıldı ([[known-issues]], [[architecture]]). Aşağıdaki metin 2026-10-19 tarihli bulgunun aslıdır.
 - **Persona:** Kıdemli Yazılım Mimarı
 - **Dosya/Konum:** `docs/NEXT_SESSION.md:69,75` ve `:14`
 - **Kategori:** Dokümantasyon
@@ -289,10 +292,11 @@ await invoke('run_ffmpeg_export', { args: ['-hide_banner', '-i', path], outputPa
 - **Bağımlılık:** Yok.
 
 ### [🟡] 18. Methodoloji uyumsuzluğu: wiki yok, commit'lerde AI referansı
+- **Durum (2026-10-21):** Çözüldü. 11 commit'ten `Co-Authored-By` silindi (push yoktu, `filter-branch`), `docs/wiki/` ve `CLAUDE.md` kuruldu. Aşağıdaki metin 2026-10-19 tarihli bulgunun aslıdır.
 - **Persona:** Kıdemli Yazılım Mimarı
 - **Dosya/Konum:** `docs/wiki/` (yok), `CLAUDE.md` (yok), son 6 commit
 - **Kategori:** Süreç
-- **Sorun:** `AI-Gelistirme-Metodolojisi.md` §1 `docs/wiki/{index,log,rules}.md` ve `CLAUDE.md` ister; depoda yok (`docs/` altında `RULES.md`, `TODO.md`, `NEXT_SESSION.md`, `ARCHITECTURE.md` var). §6 "Co-Authored-By" satırını yasaklıyor; `git log -n 6` altı commit'in altısında da bu satır var. Commit `3723a25` benim ürettiğim ve aynı satırı taşıyor; harness yapılandırması bu satırı istiyor, doküman yasaklıyor.
+- **Sorun:** `AI-Gelistirme-Metodolojisi.md` §1 `docs/wiki/{index,log,rules}.md` ve `CLAUDE.md` ister; depoda yok (o gün `docs/` altında `RULES.md`, `TODO.md`, `NEXT_SESSION.md`, `ARCHITECTURE.md` vardı; şimdi hepsi `docs/wiki/` altında). §6 "Co-Authored-By" satırını yasaklıyor; `git log -n 6` altı commit'in altısında da bu satır var. Commit `3723a25` benim ürettiğim ve aynı satırı taşıyor; harness yapılandırması bu satırı istiyor, doküman yasaklıyor.
 - **Etki:** Her oturum projeyi `NEXT_SESSION.md`'den yeniden keşfediyor; `log.md` olmadığı için kararlar commit mesajlarına gömülü. Commit geçmişi methodoloji kuralını ihlal ediyor.
 - **Çözüm:** `docs/wiki` iskeleti + kısa `CLAUDE.md` (index'e giriş kapısı) aç; mevcut `docs/*.md` içeriğini wiki sayfalarına taşı. Commit satırı için karar ver: kural geçerliyse `git rebase` ile son 6 commit mesajı temizlenir (push yapılmadığı için güvenli).
 - **Düzeltme Eforu:** S (iskelet), M (içerik taşıma)

@@ -1,6 +1,6 @@
-# Proje Durumu & Görev Listesi (TODO.md)
+# Yol Haritası ve Görev Listesi
 
-Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme maddelerini canlı olarak takip eder.
+Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip eder. Sonraki oturumun ilk adımı: [[next-session]]. Kod/güvenlik bulguları: [[audit-report]]. Giriş: [[index]].
 
 ---
 
@@ -8,7 +8,7 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Tauri v2 + React (TypeScript + Vite) iskeletinin oluşturulması
 - [x] Tailwind CSS, PostCSS ve koyu tema renk paletinin yapılandırılması
 - [x] Vitest test ortamının entegrasyonu (`vitest.config.ts`, `setupTests.ts`)
-- [x] Dokümantasyon altyapısının kurulması (`ARCHITECTURE.md`, `RULES.md`, `TODO.md`, `README.md`)
+- [x] Dokümantasyon altyapısının kurulması; 2026-10-21'de `docs/wiki/` yapısına taşındı ([[rules]], [[architecture]], [[index]])
 - [x] Merkezi Seviyeli Loglama Servisinin kodlanması (`src/core/logger/`)
 - [x] Loglama servisi birim testlerinin yazılması (`src/core/logger/logger.test.ts`)
 
@@ -99,7 +99,6 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 - [x] Çoklu seçim (Ctrl/Shift + tık), kopyala/kes/yapıştır (Ctrl+C/X/V), çoğalt (Ctrl+D), ripple silme (Shift+Delete)
 - [x] Ses fade in/out (Inspector slider'ları, preview ve export `afade`) ve gürültü azaltma (export `afftdn`, preview'da duyulmaz) (`src/core/audio/fades.ts`)
 - [x] Renk ayarı: parlaklık / kontrast / doygunluk + hazır ayarlar (Canlı, Parlak, Sinematik, Soluk, Siyah-Beyaz). Preview canvas `filter`, export `eq`. Parlaklık preview'da çarpımsal, export'ta toplamsal olduğu için yaklaşık eşleşir (`src/core/color/colorGrading.ts`)
-- [ ] Çoklu seçilen kliplerin birlikte sürüklenmesi/kırpılması
 - [ ] Tauri'de yerel kaydet/aç diyalogları (WebView2'de File System Access API denenmedi; gerekirse Rust komutu)
 - [ ] Timeline zoom'unu içeriğe sığdır, sürükle-bırak ile medya havuzundan yerleştirme iyileştirmeleri
 - [x] Undo/Redo gerçekten bağlandı (`src/core/command/timelineHistory.ts`): timeline `tracks` değişimleri otomatik kaydedilir, sürükleme/slider düzenlemeleri tek adımda birleşir, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z ve Header butonları çalışır
@@ -132,7 +131,24 @@ Bu belge proje boyunca tamamlanan, devam eden ve planlanan tüm geliştirme madd
 
 ---
 
-## 🔮 Gelecek Fazlar & Geliştirme Fikirleri (Backlog)
-- [ ] Video filtreleri ve Renk Ayarları (LUT, Parlaklık/Kontrast/Doygunluk)
-- [ ] Geçiş efektleri (Cross dissolve, Slide, Fade - `xfade`)
-- [ ] Ses Dalga Formu (Audio Waveform) görselleştiricisi
+## 🛡️ Faz 9: Denetim Düzeltmeleri ([[audit-report]])
+- [x] Bulgu 1-2: export komutu doğrulaması, CSP, dinamik asset izin listesi ([[desktop-security]]). **Rust derlenmedi, `cargo test` ve masaüstü denemesi bekliyor**
+- [x] Bulgu 18 (kısmen): `Co-Authored-By` satırları commit geçmişinden silindi; wiki ve `CLAUDE.md` iskeleti kuruldu
+- [ ] Bulgu 3: FFmpeg'i sidecar olarak paketle, göreli yolları kaldır
+- [ ] Bulgu 4: export iptali, `spawn_blocking`, stdout okunması
+- [ ] Bulgu 5: `parseProjectFile` aralık doğrulaması
+- [ ] Bulgu 6-7: `useTimelineStore` slice'lara, `previewEngine` parçalara bölünmesi
+- [ ] Bulgu 8: UI testleri, Rust testleri, coverage
+- [ ] Bulgu 9: CI, `identifier`, sürüm tek kaynak
+- [ ] Bulgu 10-17: sessiz varsayılanlar, nesne URL sızıntısı, `probe` temizliği, Logger dosyası, `pushVisualLayer` bölünmesi, platform yolları, hook uyarıları
+
+---
+
+## 🔮 Aday Özellikler (Backlog)
+- [ ] LUT desteği (`lut3d`; renk ayarı şimdilik parlaklık/kontrast/doygunluk)
+- [ ] Hız eğrisi (ramp), ters oynatma
+- [ ] Sessizlik silici (`silencedetect` + ripple), SRT içe/dışa aktarma, ses ducking + `loudnorm`
+- [ ] Stil kopyala/yapıştır, timeline marker'ları, hedef dosya boyutlu export
+- [ ] Blur devamı: yüz/nesne takibi, efekt gücü keyframe'i, döndürülmüş bölge, "bölge hariç bulanıklaştır", statik bölgede `crop+gblur` hızlı yol
+- [ ] Otomatik altyazı (yerel whisper.cpp), TTS (Windows SAPI)
+- [ ] Ağır: arka plan silme, sahne algılama (`scdet`), stabilizasyon (`vidstab`), akıcı yavaş çekim (`minterpolate`)

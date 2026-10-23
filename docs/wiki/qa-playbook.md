@@ -46,6 +46,18 @@ await fetch('http://localhost:8098/', { method: 'POST', body: captured });
 3. Çıktıyı doğrulayın: süre ve fps (`ffmpeg -i`), karelerden bir şerit (`-ss t -frames:v 1`, `hstack`), gerçek kare karşılaştırması.
 4. **Sayısal doğrulama örneği:** keyframe'li zoom için çıktı karesini kaynak karenin farklı ölçeklerde büyütülmüş ve aynı renk ayarlı sürümüyle `psnr` ile karşılaştırın; en yüksek değer beklenen ölçekte çıkmalı (1,285x için 34,9 dB, diğer ölçekler 17-19 dB). Gözle karşılaştırma yanıltabilir.
 
+## 5b. Önizleme ile export'u sayısal karşılaştırma
+
+Aynı projeyi önizlemede ve export'ta aynı anda karşılaştırmak için: sayfada `window.__grid()` benzeri bir yardımcı canvas'ı 6x8 hücreye böler, hücre ortalamalarını (RGB) ve ekrandaki zamanı (`dk:sn:kare` → saniye) döndürür; sonuç yerel bir alıcıya (`POST /grid_<ad>`) gönderilir. Betik aynı zamanın export karesini `ffmpeg -ss t -vf scale=6:8:flags=area -f rawvideo` ile alıp 48 hücrenin farkını hesaplar. Ölçülen: tint, sharpen, wipe, iris, vinyet ve ters blur için ortalama mutlak fark 2-3,3 / 255 (video çözme ve kodlama toleransı). Zaman çubuğunda manyetik yapışmayı kapatın, yoksa playhead klip kenarlarına atlar.
+
+**Opt-in FFmpeg parite testleri:** `FFMPEG_PARITY=1 npx vitest run src/core/export` iki sentetik klipte geçişleri ve çizgili klipte efektleri gerçek ffmpeg karelerinde ölçer (`transitionParity.test.ts`, `effectParity.test.ts`, `FFMPEG_BIN` ve `QA_DIR` ile yollar değiştirilebilir). Export builder ya da önizleme formülleri değişince çalıştırın.
+
+**Dikkat:**
+- Vite çalışırken `effectRenderer.ts` gibi çekirdek modülleri düzenlemek HMR ile motoru yeniden oluşturur; önizleme eski canvas'ta donar. Sayfayı yeniden yükleyin (blob medya gider, projeyi yeniden kurun).
+- Ekran görüntüsü uygulamadan gecikebilir: bir tıklamadan sonra 2 sn bekleyip yeniden alın ya da durumu JavaScript ile okuyun.
+- Klavye ok tuşları odak bir kutu ya da kaydırıcıdaysa playhead'i oynatmaz (kaydırıcıyı değiştirir); önce odağı bırakın (Escape) ya da "1 sn" düğmelerini kullanın.
+- Masaüstü (Tauri) penceresi bu yöntemle sürülemez; native pencereyi kullanıcı elle dener.
+
 ## 6. Bu yöntemle doğrulanamayanlar
 
 Tauri diyalogları, `probe_media`, izin listesi, CSP etkisi, `minWidth/minHeight`, gerçek WebView2 davranışı. Bunlar `npm run desktop` ile elle denenir ([[next-session]], [[desktop-security]]).

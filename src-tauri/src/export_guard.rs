@@ -20,7 +20,7 @@ pub const MAX_FILTER_GRAPH_BYTES: usize = 2 * 1024 * 1024;
 /// Filters the export builder emits (`ALLOWED_FILTERS` snapshot in `guardFixtures.test.ts.snap`)
 pub const ALLOWED_FILTERS: &[&str] = &[
     "adelay", "afade", "afftdn", "alphamerge", "amix", "asetpts", "atempo", "atrim", "chromakey", "color",
-    "colorchannelmixer", "crop", "drawbox", "drawtext", "eq", "fade", "format", "gblur", "geq", "loop", "null",
+    "colorchannelmixer", "convolution", "crop", "drawbox", "drawtext", "eq", "fade", "format", "gblur", "geq", "loop", "null",
     "overlay", "pad", "rotate", "scale", "select", "setpts", "split", "trim", "volume",
 ];
 

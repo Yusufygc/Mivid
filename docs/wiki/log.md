@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-23] INGEST | Geçişler ve efektler: yeni özellikler
+Geçişlere süre/yön/eğri ve 4 yeni tür (iris, zoom, flaş, bulanık), gerçek wipe; efektlere ters mod, tüm kare, güç animasyonu, renk tonu, keskinleştir, vinyet. Yeni `core/transitions`, `TransitionPanel`, `EffectSettingsPanel`; `pushVisualLayer` baş/kuyruk ayrımı, `pushRegionEffect` dilimleri; Rust `ALLOWED_FILTERS` + `convolution`. Gerçek ffmpeg parite testleri ve gerçek Reels kaynaklarıyla tarayıcı QA'sı: önizleme ile export 2-3,3/255 fark. Bulgular: drawbox alfa'yı yok sayar, sınırlı aralık siyah/beyaz, `+-` ifadesi, canvas blur kenar koyulaşması, geçişte ripple eksikliği (düzeltildi). Bkz. [[export-pipeline]], [[preview-engine]], [[timeline-model]], [[known-issues]], [[qa-playbook]].
+
 ## [2026-10-21] LINT | Dokümanlar docs/wiki yapısına taşındı
 `docs/ARCHITECTURE.md`, `RULES.md`, `TODO.md`, `NEXT_SESSION.md`, `DENETIM_RAPORU.md` `docs/wiki/` altına taşındı ([[architecture]], [[rules]], [[roadmap]], [[next-session]], [[audit-report]]). Yeni sayfalar: [[index]], [[log]], [[timeline-model]], [[preview-engine]], [[export-pipeline]], [[desktop-security]], [[known-issues]], [[qa-playbook]]. Kökte kısa `CLAUDE.md` giriş kapısı açıldı. Eski satırlar temizlendi: resim klipleri, V1 yerleşimi ve `NEXT_SESSION` "commit bekliyor" notları. Denetim Bulgu 17 ve 18 kapandı.
 

@@ -332,7 +332,7 @@ export const PreviewPlayer: React.FC = () => {
             <BoxSelect className="w-3.5 h-3.5 text-cyan-300" />
             <span className="hidden lg:inline">Bölge</span>
           </span>
-          {(['blur', 'pixelate', 'blackbox'] as const).map((kind) => (
+          {(['blur', 'pixelate', 'blackbox', 'tint', 'sharpen'] as const).map((kind) => (
             <button
               key={kind}
               onClick={() => setRegionTool(regionTool === kind ? null : kind)}

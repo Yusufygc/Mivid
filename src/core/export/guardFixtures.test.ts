@@ -189,6 +189,67 @@ const scenarios: Record<string, Track[]> = {
     ]),
   ],
 
+  all_transitions: [
+    track('t1', 'video', [
+      baseClip('c1', 't1', 'v1', 'video', {
+        duration: 8,
+        outPoint: 8,
+        transitionOut: { type: 'wipe', duration: 1, direction: 'down', easing: 'ease-in-out' },
+      }),
+      baseClip('c2', 't1', 'v2', 'video', {
+        startTime: 7,
+        duration: 8,
+        outPoint: 8,
+        transitionIn: { type: 'iris', duration: 1, easing: 'ease-in-out' },
+        transitionOut: { type: 'zoom', duration: 1, easing: 'ease-in-out' },
+      }),
+      baseClip('c3', 't1', 'v1', 'video', {
+        startTime: 14,
+        duration: 8,
+        outPoint: 8,
+        transitionIn: { type: 'blur', duration: 1 },
+        transitionOut: { type: 'flash', duration: 0.5, easing: 'ease-in-out' },
+      }),
+      baseClip('c4', 't1', 'v2', 'video', {
+        startTime: 22,
+        duration: 8,
+        outPoint: 8,
+        transitionIn: { type: 'slide', duration: 1, direction: 'up', easing: 'ease-in-out' },
+        transitionOut: { type: 'cross-dissolve', duration: 1, easing: 'ease-in-out' },
+      }),
+    ]),
+  ],
+
+  new_effects: [
+    track('t1', 'video', [baseClip('c1', 't1', 'v1', 'video', { duration: 20, outPoint: 20 })]),
+    track('te', 'effect', [
+      baseClip('e1', 'te', 'effect-1', 'effect', {
+        startTime: 1,
+        duration: 3,
+        effect: { kind: 'blur', shape: 'ellipse', strength: 0.1, strengthEnd: 0.9, strengthEasing: 'ease-in-out', feather: 0.3, width: 300, height: 300, invert: true },
+        audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      }),
+      baseClip('e2', 'te', 'effect-2', 'effect', {
+        startTime: 5,
+        duration: 2,
+        effect: { kind: 'tint', shape: 'rect', strength: 0.7, feather: 0, width: 400, height: 400, color: '#FF9F40', fullFrame: true },
+        audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      }),
+      baseClip('e3', 'te', 'effect-3', 'effect', {
+        startTime: 8,
+        duration: 2,
+        effect: { kind: 'sharpen', shape: 'rect', strength: 0.6, feather: 0.1, width: 400, height: 400 },
+        audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      }),
+      baseClip('e4', 'te', 'effect-4', 'effect', {
+        startTime: 11,
+        duration: 3,
+        effect: { kind: 'vignette', shape: 'rect', strength: 0.6, strengthEnd: 0.2, feather: 0, width: 400, height: 400, fullFrame: true },
+        audio: { volume: 1, muted: true, fadeIn: 0, fadeOut: 0 },
+      }),
+    ]),
+  ],
+
   image_freeze_silent_audio: [
     track('t1', 'video', [
       baseClip('c1', 't1', 'v1', 'video', { duration: 4, outPoint: 4 }),

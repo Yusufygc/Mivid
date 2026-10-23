@@ -37,7 +37,7 @@ Betikten çağrılabilen "izin ver" komutu yoktur; izin yalnızca yerel diyalogl
 2. Son argüman = seçilen çıktı yolu; uzantı `.mp4/.mov/.webm`; mutlak, `..` yok; `C:/Windows`, `C:/Program Files*`, `C:/ProgramData` yasak.
 3. İzinli bayraklar: `-y`, `-loop 1`, `-framerate`, `-t`, `-i`, `-filter_complex`, `-map [etiket]`, `-c:a aac`, `-b:a \d+k`, `-c:v libx264`, `-pix_fmt yuv420p`, `-preset <liste>`. Başkası reddedilir.
 4. `-i` yolu mutlak, `..` yok, izin listesinde, (üretimde) diskte var.
-5. Filtre grafı tırnak/kaçış duyarlı ayrıştırılır; **yalnızca** `ALLOWED_FILTERS` içindeki filtre adları geçer. Dosya okuyan seçenekler (`textfile`, `file`, `filename`, `subfile`, `fontsdir`, `font_file`, `lut`, `lutfile`) reddedilir; `fontfile` yalnızca `C:/Windows/Fonts/` altından.
+5. Filtre grafı tırnak/kaçış duyarlı ayrıştırılır; **yalnızca** `ALLOWED_FILTERS` içindeki filtre adları geçer (30 filtre; son eklenen `convolution`, keskinleştirme için). Dosya okuyan seçenekler (`textfile`, `file`, `filename`, `subfile`, `fontsdir`, `font_file`, `lut`, `lutfile`) reddedilir; `fontfile` yalnızca `C:/Windows/Fonts/` altından.
 
 Builder yeni filtre/bayrak kullanırsa `guardFixtures.test.ts` snapshot'ı kırılır; `ALLOWED_FILTERS` bilinçli güncellenir.
 

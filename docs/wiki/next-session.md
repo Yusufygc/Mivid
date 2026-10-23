@@ -5,16 +5,15 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
 ## 1. Şu anki durum
 
 - `feature` dalı temiz; son commit'ler: `6c8b386` (export doğrulaması, CSP, izin listesi), `1209dac` (QA düzeltme turu), `e9ad6e0` (ürün adı Mivid). Hiçbir şey push edilmedi. Remote tanımlı değil.
-- Testler: 257 birim testi, `npx tsc -b`, `npm run build` temiz; `oxlint` 3 eski uyarı ([[known-issues]]).
-- **Rust derlenmedi.** `export_guard.rs`, `media_access.rs` ve `lib.rs` yeni komutları yazıldı ama bu makinede `link.exe` (Visual Studio C++ iş yükü) yok. Kullanıcı VS Installer'da "C++ ile masaüstü geliştirme"yi kurmaya başlıyor ([[desktop-security]]).
+- Testler: 355 birim testi (29'u gerçek ffmpeg isteyen opt-in parite testi, `FFMPEG_PARITY=1`), `npx tsc -b`, `npm run build` temiz; `oxlint` 3 eski uyarı ([[known-issues]]).
+- **Rust derleniyor ve testleri geçiyor** (`cargo test --lib`: 24/24). Native pencerede elle denemeler hâlâ bekliyor ([[desktop-security]]), aşağıda bölüm 2.
 - Karar: bu projede REA / CapCut incelemesi yok; özgün, iş akışını kolaylaştıran özellikler yapılır. Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına, AI satırı olmadan ([[rules]]).
-- Denetim raporu: [[audit-report]] (18 bulgu; 1-2 kodlandı, 18 kısmen).
+- Denetim raporu: [[audit-report]] (18 bulgu; 1-2 kodlandı ve Rust testleri geçti, 17-18 kapandı).
+- **Yeni (2026-10-23): geçişler ve efektler** kodlandı, testlendi, gerçek ffmpeg ve önizleme karşılaştırmasıyla doğrulandı, commit bekliyor ([[roadmap]] Faz 10, [[log]]). Rust `cargo test` 24/24 geçti (VS C++ kuruldu), `npm run tauri dev` açılıyor; `vite.config.ts`'e `watch.ignored: ['**/src-tauri/**']` eklendi (cargo çıktısı vite'ı EBUSY ile çökertiyordu).
 
-## 2. Sıradaki adım: C++ iş yükü kurulunca
+## 2. Sıradaki adım: native pencerede elle deneme (kullanıcı)
 
-1. `link.exe` geldi mi: `vswhere -all -prerelease -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`.
-2. `cd src-tauri; cargo test`: `export_guard` (fixture sözleşmesi dahil), `media_access` ve `lib.rs` testleri. Derleme hatası çıkarsa düzelt (kod hiç derlenmedi: tür/ödünç alma hataları beklenir).
-3. `npm run tauri dev` ya da `npm run desktop` ile elle deneme:
+1. `npm run tauri dev` ile aç (PATH'te `%USERPROFILE%\.cargo\bin`). Elle deneme:
    - medya içe aktar ve önizle (asset kapsamı `[]` iken `asset://` çalışıyor mu)
    - uygulamayı kapat/aç, otomatik kaydı kurtar: önizleme çalışmalı (kalıcı izin listesi)
    - proje aç diyaloğu (`open_project_dialog`)
@@ -23,7 +22,7 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
    - **saldırı denemeleri** (devTools): `invoke('run_ffmpeg_export', {args:['-y','-i','C:/Windows/win.ini','x.mp4'], totalDuration:1})` reddedilmeli; `fetch('asset://localhost/C:/Windows/win.ini')` açılmamalı
    - konsolda "Refused to …" varsa `tauri.conf.json` `csp`/`devCsp` güncelle
    - Ctrl+S/Ctrl+O (WebView2'de `showSaveFilePicker` çalışıyor mu), film şeridi/dalga formu (asset protokolünden `fetch`), chroma önizlemesi (kirli canvas yedeği), `minWidth/minHeight`, resizable timeline
-4. Sonuçları [[desktop-security]] ve `log.md`'ye işle; sonra [[roadmap]] Faz 9'dan devam.
+2. Yeni geçiş ve efektleri de native pencerede dene (Inspector'da süre/yön/eğri, efekt ters/tüm kare/güç animasyonu, export). Sonuçları [[desktop-security]] ve `log.md`'ye işle; sonra [[roadmap]] Faz 9'dan devam.
 
 ## 3. Derleme gerektirmeden yapılabilecekler (önerilen sıra)
 

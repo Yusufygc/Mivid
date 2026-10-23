@@ -131,6 +131,13 @@ Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip 
 
 ---
 
+## ✨ Faz 10: Geçişler ve Efektler (yeni)
+- [x] Geçişler: 8 tür (+ iris, zoom, flaş, bulanık), süre kaydırıcısı (0,2-3 sn), yön (slide/wipe, gerçek silme), eğri (doğrusal/yumuşak), süre değişince bindirme ve ripple, çıkışta aynı tür tekrar eklenince çift kayma düzeltildi
+- [x] Efektler: renk tonu, keskinleştir, vinyet; **ters mod** (bölge dışı), **tüm kare**, **güç animasyonu** (başlangıç → bitiş, 0,2 sn dilimler); bölme kesimde animasyonu sürekli tutar
+- [x] Bölme: giriş geçişi sol yarıda, çıkış geçişi sağ yarıda kalır (kesim geçiş sayılmaz)
+- [x] Gerçek FFmpeg parite testleri (opt-in) ve preview/export tarayıcı karşılaştırması ([[qa-playbook]])
+- [ ] Yumuşak kenarlı wipe, gerçek "siyaha dalma", slide/wipe'te arka plan, efekt gücü için tam keyframe, vinyet bölgesi
+
 ## 🛡️ Faz 9: Denetim Düzeltmeleri ([[audit-report]])
 - [x] Bulgu 1-2: export komutu doğrulaması, CSP, dinamik asset izin listesi ([[desktop-security]]). **Rust derlenmedi, `cargo test` ve masaüstü denemesi bekliyor**
 - [x] Bulgu 18 (kısmen): `Co-Authored-By` satırları commit geçmişinden silindi; wiki ve `CLAUDE.md` iskeleti kuruldu

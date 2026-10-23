@@ -1,5 +1,5 @@
 import React from 'react';
-import { BoxSelect, EyeOff, Grid3x3, Plus } from 'lucide-react';
+import { BoxSelect, Contrast, EyeOff, Grid3x3, Palette, Plus, Sparkles } from 'lucide-react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
 import { EffectKind } from '@/types/timeline';
 import { EFFECT_KIND_LABELS } from '@/core/effects/regionEffects';
@@ -26,6 +26,21 @@ const EFFECTS: EffectTemplate[] = [
     description: 'Bölgeyi tamamen siyah kutuyla kapatır.',
     icon: <EyeOff className="w-5 h-5 text-cyan-300" />,
   },
+  {
+    kind: 'tint',
+    description: 'Bölgeye ya da tüm kareye renkli bir ton verir.',
+    icon: <Palette className="w-5 h-5 text-cyan-300" />,
+  },
+  {
+    kind: 'sharpen',
+    description: 'Detayı keskinleştirir (bölge ya da tüm kare).',
+    icon: <Sparkles className="w-5 h-5 text-cyan-300" />,
+  },
+  {
+    kind: 'vignette',
+    description: 'Kenarları karartır, bakışı merkeze toplar (tüm kare).',
+    icon: <Contrast className="w-5 h-5 text-cyan-300" />,
+  },
 ];
 
 /** Region effects: click to add one at the playhead, then drag its corners in the preview */
@@ -34,9 +49,10 @@ export const EffectPresets: React.FC = () => {
 
   return (
     <div className="p-3 space-y-3">
-      <div className="text-xs font-medium text-gray-400">Bölge Efektleri</div>
+      <div className="text-xs font-medium text-gray-400">Efektler</div>
       <p className="text-[11px] text-gray-500">
         Tıkla: playhead'e eklenir. Ya da önizlemenin sol üstündeki <b>Bölge</b> aracıyla doğrudan bir dikdörtgen çiz.
+        Ters mod, tüm kare ve güç animasyonu efekt klibinin ayarlarında.
       </p>
 
       <div className="space-y-2">

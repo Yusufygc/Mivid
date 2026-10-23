@@ -2,6 +2,7 @@ import { Clip, Track, TrackType } from '@/types/timeline';
 import { Logger } from '@/core/logger';
 import { clampTime } from '@/utils/time';
 import { splitKeyframes } from '@/core/animation/keyframes';
+import { splitEffectRamp } from '@/core/effects/regionEffects';
 
 export interface SplitResult {
   leftClip: Clip;
@@ -164,13 +165,19 @@ export class TimelineEngine {
 
     const { left: leftKeyframes, right: rightKeyframes } = splitKeyframes(clip.keyframes, splitTime - clipStart);
 
+    // A strength ramp of an effect continues across the cut
+    const ramp = clip.effect ? splitEffectRamp(clip.effect, leftDuration / clip.duration) : null;
+
     const leftClip: Clip = {
       ...clip,
       id: crypto.randomUUID ? crypto.randomUUID() : `${clip.id}-L-${Date.now()}`,
       duration: leftDuration,
       outPoint: clampTime(clip.inPoint + leftDuration * clip.speed),
       keyframes: leftKeyframes,
+      ...(ramp ? { effect: ramp.left } : {}),
     };
+    // The cut is no transition: the left half keeps the way in, the right half the way out
+    delete leftClip.transitionOut;
 
     const rightClip: Clip = {
       ...clip,
@@ -180,7 +187,9 @@ export class TimelineEngine {
       inPoint: leftClip.outPoint,
       outPoint: clip.outPoint,
       keyframes: rightKeyframes,
+      ...(ramp ? { effect: ramp.right } : {}),
     };
+    delete rightClip.transitionIn;
 
     Logger.info('TimelineEngine', `Split clip ${clip.name} into two at ${splitTime.toFixed(2)}s`);
     return { leftClip, rightClip };

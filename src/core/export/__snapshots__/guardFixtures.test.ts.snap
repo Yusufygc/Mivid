@@ -13,6 +13,7 @@ exports[`export guard fixtures > uses only the filters and flags the guard allow
   "chromakey",
   "color",
   "colorchannelmixer",
+  "convolution",
   "crop",
   "drawbox",
   "drawtext",

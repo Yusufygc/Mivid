@@ -59,9 +59,17 @@ export interface TextProperties {
   animation?: TextAnimation;
 }
 
+export type TransitionType = 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe' | 'iris' | 'zoom' | 'flash' | 'blur';
+/** Direction the clip (slide) or the wipe edge travels */
+export type TransitionDirection = 'left' | 'right' | 'up' | 'down';
+
 export interface Transition {
-  type: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe';
+  type: TransitionType;
   duration: number;
+  /** slide and wipe only; undefined = left */
+  direction?: TransitionDirection;
+  /** Undefined = linear, which is how transitions worked before easing existed */
+  easing?: Easing;
 }
 
 export interface ColorGrading {
@@ -83,7 +91,7 @@ export interface Keyframe {
 
 export type ClipKeyframes = Partial<Record<AnimatableProp, Keyframe[]>>;
 
-export type EffectKind = 'blur' | 'pixelate' | 'blackbox';
+export type EffectKind = 'blur' | 'pixelate' | 'blackbox' | 'tint' | 'sharpen' | 'vignette';
 export type EffectShape = 'rect' | 'ellipse';
 
 /** A region effect (blur, mosaic, black box). Lives on an `effect` track; position and scale come from `transform`. */
@@ -94,6 +102,16 @@ export interface EffectSettings {
   feather: number; // 0..1, soft edge
   width: number; // Region size in project pixels at scale 1
   height: number;
+  /** Apply the effect everywhere except the region (focus on a face, blur the rest) */
+  invert?: boolean;
+  /** Apply to the whole frame, no region (an adjustment layer). Always on for the vignette. */
+  fullFrame?: boolean;
+  /** Tint color, #rrggbb */
+  color?: string;
+  /** Strength at the end of the clip; the strength ramps from `strength` to this (undefined = constant) */
+  strengthEnd?: number;
+  /** Curve of the ramp, linear when undefined */
+  strengthEasing?: Easing;
 }
 
 /** How footage fills the project frame: stretched (old behavior), fitted inside (letterbox) or covering it (crop) */

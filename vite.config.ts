@@ -13,6 +13,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // cargo writes build output under src-tauri while vite runs; watching it crashes vite with EBUSY on Windows
+    watch: { ignored: ['**/src-tauri/**'] },
   },
   test: {
     globals: true,

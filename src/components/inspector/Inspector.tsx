@@ -1,11 +1,12 @@
 import React from 'react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
-import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge, Palette, BoxSelect, Maximize, Pipette } from 'lucide-react';
+import { Sliders, Volume2, Move, Clock, RotateCcw, Gauge, Palette, Maximize, Pipette } from 'lucide-react';
 import { TextInspector } from './TextInspector';
 import { KeyframeControls } from './KeyframeControls';
+import { EffectSettingsPanel } from './EffectSettingsPanel';
+import { TransitionPanel } from './TransitionPanel';
 import { evaluateProp } from '@/core/animation/keyframes';
 import { maxFade } from '@/core/audio/fades';
-import { EFFECT_KIND_LABELS, EFFECT_SHAPE_LABELS } from '@/core/effects/regionEffects';
 import { FitMode } from '@/types/timeline';
 import { CHROMA_PRESETS, DEFAULT_CHROMA_KEY } from '@/core/chroma/chromaKey';
 import { COLOR_PRESETS, GRADING_LIMITS, NEUTRAL_GRADING, isNeutralGrading } from '@/core/color/colorGrading';
@@ -21,7 +22,6 @@ export const Inspector: React.FC = () => {
     updateClipTransform,
     updateClipAudio,
     updateClipColor,
-    updateClipEffect,
     updateClipFit,
     updateClipChroma,
     updateClipBackdrop,
@@ -159,99 +159,8 @@ export const Inspector: React.FC = () => {
         {/* Text Specific Inspector */}
         {selectedClip.type === 'text' && <TextInspector clip={selectedClip} />}
 
-        {/* Region effect (blur, mosaic, black box) */}
-        {isEffect && selectedClip.effect && (
-          <div className="space-y-3 pt-2 border-t border-surface-border">
-            <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
-              <BoxSelect className="w-3.5 h-3.5 text-cyan-300" />
-              <span>Bölge Efekti</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5">
-              {(['blur', 'pixelate', 'blackbox'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  onClick={() => updateClipEffect(selectedClip.id, { kind })}
-                  className={`py-1 rounded text-[11px] font-medium transition-all ${
-                    selectedClip.effect!.kind === kind
-                      ? 'bg-cyan-500 text-black font-semibold'
-                      : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
-                  }`}
-                >
-                  {EFFECT_KIND_LABELS[kind]}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5">
-              {(['rect', 'ellipse'] as const).map((shape) => (
-                <button
-                  key={shape}
-                  onClick={() => updateClipEffect(selectedClip.id, { shape })}
-                  className={`py-1 rounded text-[11px] font-medium transition-all ${
-                    selectedClip.effect!.shape === shape
-                      ? 'bg-cyan-500/80 text-black font-semibold'
-                      : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
-                  }`}
-                >
-                  {EFFECT_SHAPE_LABELS[shape]}
-                </button>
-              ))}
-            </div>
-
-            {selectedClip.effect.kind !== 'blackbox' && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>{selectedClip.effect.kind === 'blur' ? 'Bulanıklık' : 'Blok boyutu'}</span>
-                  <span className="font-mono text-gray-200">{Math.round(selectedClip.effect.strength * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.02"
-                  max="1"
-                  step="0.01"
-                  value={selectedClip.effect.strength}
-                  onChange={(e) => updateClipEffect(selectedClip.id, { strength: parseFloat(e.target.value) })}
-                  className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                />
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Kenar yumuşatma</span>
-                <span className="font-mono text-gray-200">{Math.round(selectedClip.effect.feather * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={selectedClip.effect.feather}
-                onChange={(e) => updateClipEffect(selectedClip.id, { feather: parseFloat(e.target.value) })}
-                className="w-full h-1.5 bg-surface-light rounded-lg appearance-none cursor-pointer accent-cyan-400"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {(['width', 'height'] as const).map((key) => (
-                <div key={key} className="space-y-1">
-                  <label className="text-[11px] text-gray-400">{key === 'width' ? 'Genişlik (px)' : 'Yükseklik (px)'}</label>
-                  <input
-                    type="number"
-                    value={Math.round(selectedClip.effect![key])}
-                    onChange={(e) => updateClipEffect(selectedClip.id, { [key]: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-surface-light px-2 py-1 rounded text-xs text-gray-200 border border-surface-border focus:border-primary outline-none font-mono"
-                  />
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-gray-500">
-              Bölgeyi önizlemede köşelerinden boyutlandır, sürükleyerek taşı. Hareketli nesne için Konum / Ölçek
-              keyframe'lerini kullan.
-            </p>
-          </div>
-        )}
+        {/* Effect clip settings (blur, mosaic, black box, tint, sharpen, vignette) */}
+        {isEffect && selectedClip.effect && <EffectSettingsPanel clip={selectedClip} />}
 
         {/* Visual Transforms (Video, Overlay & Text) */}
         {selectedClip.type !== 'audio' && (
@@ -570,109 +479,8 @@ export const Inspector: React.FC = () => {
           </div>
         )}
 
-        {/* Transitions Settings (for video & overlay clips) */}
-        {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && !isEffect && (
-          <div className="space-y-4 pt-2 border-t border-surface-border">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
-                <Sliders className="w-3.5 h-3.5 text-purple-400" />
-                <span>Geçiş Efektleri (Transitions)</span>
-              </div>
-            </div>
-
-            {/* Transition In */}
-            <div className="space-y-2 bg-surface-light/30 p-2.5 rounded-lg border border-surface-border/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-gray-300">Giriş Geçişi (In)</span>
-                {selectedClip.transitionIn && (
-                  <button
-                    onClick={() => useTimelineStore.getState().removeTransition(selectedClip!.id, 'in')}
-                    className="text-[10px] text-rose-400 hover:text-rose-300"
-                  >
-                    Kaldır
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { id: 'cross-dissolve', name: 'Çapraz' },
-                  { id: 'fade-to-black', name: 'Kararma' },
-                  { id: 'slide', name: 'Kaydırma' },
-                  { id: 'wipe', name: 'Silme' },
-                ].map((t) => {
-                  const isActive = selectedClip!.transitionIn?.type === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() =>
-                        useTimelineStore
-                          .getState()
-                          .addTransition(
-                            selectedClip!.id,
-                            'in',
-                            t.id as 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe'
-                          )
-                      }
-                      className={`py-1 px-2 rounded text-[11px] font-medium transition-all ${
-                        isActive
-                          ? 'bg-purple-600 text-white font-semibold shadow-sm'
-                          : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Transition Out */}
-            <div className="space-y-2 bg-surface-light/30 p-2.5 rounded-lg border border-surface-border/50">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-gray-300">Çıkış Geçişi (Out)</span>
-                {selectedClip.transitionOut && (
-                  <button
-                    onClick={() => useTimelineStore.getState().removeTransition(selectedClip!.id, 'out')}
-                    className="text-[10px] text-rose-400 hover:text-rose-300"
-                  >
-                    Kaldır
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { id: 'cross-dissolve', name: 'Çapraz' },
-                  { id: 'fade-to-black', name: 'Kararma' },
-                  { id: 'slide', name: 'Kaydırma' },
-                  { id: 'wipe', name: 'Silme' },
-                ].map((t) => {
-                  const isActive = selectedClip!.transitionOut?.type === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() =>
-                        useTimelineStore
-                          .getState()
-                          .addTransition(
-                            selectedClip!.id,
-                            'out',
-                            t.id as 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe'
-                          )
-                      }
-                      className={`py-1 px-2 rounded text-[11px] font-medium transition-all ${
-                        isActive
-                          ? 'bg-purple-600 text-white font-semibold shadow-sm'
-                          : 'bg-surface-light text-gray-400 hover:text-gray-200 hover:bg-surface-border/60'
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Transitions (video, image and overlay clips) */}
+        {selectedClip.type !== 'audio' && selectedClip.type !== 'text' && !isEffect && <TransitionPanel clip={selectedClip} />}
 
         {/* Audio Settings (for video & audio clips) */}
         {selectedClip.type !== 'text' && !isEffect && (

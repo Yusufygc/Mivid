@@ -16,6 +16,17 @@ Davranışsal sınırlar ve bilinen farklar. Kod kalitesi ve güvenlik bulgular�
 - **Karışım modları yok:** FFmpeg `blend` şeffaf katmanı ve alfa'yı doğru karıştırmadığı için önizleme/export eşleşmiyor.
 - **Önizleme `denoise` göstermez** (yalnızca export'ta `afftdn`).
 
+## Geçişler ve efektler
+
+- **Bulanık arka plan** slide, wipe ve iris geçişlerinde klibi izlemez (maskelenmez / kaymaz); dissolve, kararma, zoom ve blur'da doğrusal solar.
+- **Blur geçişi** sabit sigma kullanır (kare yüksekliğinin %2,5'i): FFmpeg `gblur` kare başına sigma değiştiremez. Önizleme de aynı sabiti kullanır.
+- **Efekt gücü animasyonu** sürekli eğri değil, 0,2 sn'lik sabit dilimlerdir (en çok 16 dilim); önizleme aynı dilimleri oynar. Tam keyframe (`clip.keyframes` üzerinden) yok.
+- **Yumuşak kenarlı wipe yok**: sert kenar. Wipe/iris maskesi katman koordinatındadır (döndürülmüş klipte maske de döner).
+- **`fade-to-black`** doğrusal dissolve ile aynıdır (alfa solması): komşu klip bindirmesi altında kararmaya değil çapraz geçişe benzer. Gerçek "siyaha dalma" için ayrı iş.
+- **Sharpen** önizlemede SVG filtre, export'ta RGB `convolution`: aynı çekirdek, kenar piksellerinde birkaç seviye fark.
+- **Vinyet** yalnızca tüm kare; bölge desteği yok. **Önizlemede ters/tüm kare** efektin tutamaçları gizlidir (tüm kare efektte bölge yok).
+- **Geçişte arkadaki klipler kayar** (ripple); aralarında boşluk olan klipler kaymaz. İkinci kanaldaki klipler etkilenmez.
+
 ## Medya
 
 - **Film şeridi:** her video için 12 kare, tüm asset'e esnetilmiş tek şerit; **dalga formu** 10 dakikadan uzun seslerde üretilmez (`MAX_WAVEFORM_SECONDS`).

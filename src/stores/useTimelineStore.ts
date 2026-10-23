@@ -12,7 +12,15 @@ import {
   EffectSettings,
   FitMode,
   ChromaKey,
+  Transition,
+  TransitionType,
 } from '@/types/timeline';
+import {
+  DEFAULT_TRANSITION_DIRECTION,
+  DEFAULT_TRANSITION_SECONDS,
+  clampTransitionSeconds,
+  transitionUsesDirection,
+} from '@/core/transitions/transitions';
 import { DEFAULT_CHROMA_KEY, clampChroma } from '@/core/chroma/chromaKey';
 import { DEFAULT_EFFECT_SECONDS, EFFECT_KIND_LABELS, clampEffect, defaultEffect } from '@/core/effects/regionEffects';
 import { NEUTRAL_GRADING, clampGrading, isNeutralGrading } from '@/core/color/colorGrading';
@@ -126,11 +134,23 @@ interface TimelineStoreState {
   updateClipBackdrop: (clipId: string, strength: number) => void;
   updateClipText: (clipId: string, text: Partial<TextProperties>) => void;
   moveClipToTrack: (clipId: string, targetTrackId: string, newStartTime: number) => void;
-  addTransition: (clipId: string, position: 'in' | 'out', transitionType: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe') => void;
+  addTransition: (clipId: string, position: 'in' | 'out', transitionType: TransitionType) => void;
+  /**
+   * Edits a transition: type, duration, direction, easing. A new duration moves the neighbor that overlaps this
+   * clip (the one a transition pulled left) so the overlap always equals the transition length.
+   */
+  updateTransition: (clipId: string, position: 'in' | 'out', patch: Partial<Transition>) => void;
   removeTransition: (clipId: string, position: 'in' | 'out') => void;
   /** Replaces all tracks (undo/redo). Keeps the project duration and selection consistent. */
   restoreTracks: (tracks: Track[]) => void;
 }
+
+/**
+ * Moves every clip after `index` by `delta` seconds. A transition pulls a clip left over its neighbor; the clips behind it
+ * follow so the overlap does not leave a gap at the end of the run.
+ */
+const rippleAfter = (clips: Clip[], index: number, delta: number): Clip[] =>
+  Math.abs(delta) < 1e-9 ? clips : clips.map((c, i) => (i > index ? { ...c, startTime: Math.max(0, c.startTime + delta) } : c));
 
 const syncProjectDuration = (tracks: Track[]) => {
   let maxEnd = 0;
@@ -1133,8 +1153,21 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
 
   addTransition: (clipId, position, transitionType) => {
     const { tracks } = get();
-    const duration = 1.0; // default 1 second transition
-    
+    // A clip that already has a transition on that side only changes type: adding again would pull it left a second time
+    const existing = tracks.flatMap((t) => t.clips).find((c) => c.id === clipId);
+    if (existing && (position === 'in' ? existing.transitionIn : existing.transitionOut)) {
+      get().updateTransition(clipId, position, { type: transitionType });
+      return;
+    }
+    const duration = DEFAULT_TRANSITION_SECONDS;
+    // New transitions ease in and out; the direction only matters for slide and wipe
+    const makeTransition = (): Transition => ({
+      type: transitionType,
+      duration,
+      easing: 'ease-in-out',
+      ...(transitionUsesDirection(transitionType) ? { direction: DEFAULT_TRANSITION_DIRECTION } : {}),
+    });
+
     let updatedClip: Clip | null = null;
 
     const newTracks = tracks.map((t) => {
@@ -1142,9 +1175,9 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
       if (clipIndex !== -1) {
         const clip = t.clips[clipIndex];
         const newClip = { ...clip };
-        
+
         if (position === 'in') {
-          newClip.transitionIn = { type: transitionType, duration };
+          newClip.transitionIn = makeTransition();
           // If we add an in-transition, and there's a previous clip, we need to shift THIS clip left by duration
           if (clipIndex > 0) {
             const prevClip = t.clips[clipIndex - 1];
@@ -1154,23 +1187,27 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
             }
           }
         } else {
-          newClip.transitionOut = { type: transitionType, duration };
+          newClip.transitionOut = makeTransition();
         }
-        
+
         updatedClip = newClip;
-        
-        const newClips = [...t.clips];
+
+        let newClips = [...t.clips];
         newClips[clipIndex] = newClip;
-        
-        // If we added a transition out, and there's a next clip adjacent, we shift the NEXT clip left
+
+        // The in-transition pulled this clip left: the clips behind it follow
+        if (position === 'in') newClips = rippleAfter(newClips, clipIndex, newClip.startTime - clip.startTime);
+
+        // If we added a transition out, and there's a next clip adjacent, we shift the NEXT clip left (and the ones behind it)
         if (position === 'out' && clipIndex < newClips.length - 1) {
           const nextClip = newClips[clipIndex + 1];
           if (Math.abs(newClip.startTime + newClip.duration - nextClip.startTime) < 0.1) {
             const updatedNextClip = { ...nextClip, startTime: Math.max(0, nextClip.startTime - duration) };
             newClips[clipIndex + 1] = updatedNextClip;
+            newClips = rippleAfter(newClips, clipIndex + 1, updatedNextClip.startTime - nextClip.startTime);
           }
         }
-        
+
         return { ...t, clips: newClips.sort((a, b) => a.startTime - b.startTime) };
       }
       return t;
@@ -1183,16 +1220,69 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
     }
   },
 
+  updateTransition: (clipId, position, patch) => {
+    const { tracks } = get();
+    let changed = false;
+
+    const newTracks = tracks.map((t) => {
+      const clipIndex = t.clips.findIndex((c) => c.id === clipId);
+      if (clipIndex === -1 || t.isLocked) return t;
+
+      const clip = t.clips[clipIndex];
+      const current = position === 'in' ? clip.transitionIn : clip.transitionOut;
+      if (!current) return t;
+
+      const neighbor = position === 'in' ? t.clips[clipIndex - 1] : t.clips[clipIndex + 1];
+      const next: Transition = { ...current, ...patch };
+      if (patch.type && !transitionUsesDirection(patch.type)) delete next.direction;
+      if (patch.type && transitionUsesDirection(patch.type) && !next.direction) next.direction = DEFAULT_TRANSITION_DIRECTION;
+      next.duration = clampTransitionSeconds(next.duration, clip.duration, neighbor?.duration ?? clip.duration);
+
+      let newClips = [...t.clips];
+      const newClip: Clip = { ...clip };
+      if (position === 'in') newClip.transitionIn = next;
+      else newClip.transitionOut = next;
+      newClips[clipIndex] = newClip;
+
+      const delta = next.duration - current.duration;
+      if (Math.abs(delta) > 1e-6 && neighbor) {
+        if (position === 'in') {
+          // The transition pulled this clip left over the previous one: keep overlap == duration
+          const overlap = neighbor.startTime + neighbor.duration - clip.startTime;
+          if (Math.abs(overlap - current.duration) < 0.1) {
+            newClip.startTime = Math.max(0, neighbor.startTime + neighbor.duration - next.duration);
+            newClips = rippleAfter(newClips, clipIndex, newClip.startTime - clip.startTime);
+          }
+        } else {
+          // The transition pulled the next clip left over this one
+          const overlap = clip.startTime + clip.duration - neighbor.startTime;
+          if (Math.abs(overlap - current.duration) < 0.1) {
+            const moved = { ...neighbor, startTime: Math.max(0, clip.startTime + clip.duration - next.duration) };
+            newClips[clipIndex + 1] = moved;
+            newClips = rippleAfter(newClips, clipIndex + 1, moved.startTime - neighbor.startTime);
+          }
+        }
+      }
+
+      changed = true;
+      return { ...t, clips: newClips.sort((a, b) => a.startTime - b.startTime) };
+    });
+
+    if (!changed) return;
+    syncProjectDuration(newTracks);
+    set({ tracks: newTracks });
+  },
+
   removeTransition: (clipId, position) => {
     const { tracks } = get();
-    
+
     const newTracks = tracks.map((t) => {
       const clipIndex = t.clips.findIndex((c) => c.id === clipId);
       if (clipIndex !== -1) {
         const clip = t.clips[clipIndex];
         const newClip = { ...clip };
         const durationToRevert = position === 'in' ? (newClip.transitionIn?.duration || 0) : (newClip.transitionOut?.duration || 0);
-        
+
         if (position === 'in') {
           delete newClip.transitionIn;
           // Revert the left shift
@@ -1202,10 +1292,15 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
         } else {
           delete newClip.transitionOut;
         }
-        
-        const newClips = [...t.clips];
+
+        let newClips = [...t.clips];
         newClips[clipIndex] = newClip;
-        
+
+        // The clips behind an in-transition moved with it
+        if (position === 'in' && clipIndex > 0 && durationToRevert > 0) {
+          newClips = rippleAfter(newClips, clipIndex, durationToRevert);
+        }
+
         // Revert shift on next clip if we are removing transitionOut
         if (position === 'out' && clipIndex < newClips.length - 1 && durationToRevert > 0) {
           const nextClip = newClips[clipIndex + 1];
@@ -1213,6 +1308,7 @@ export const useTimelineStore = create<TimelineStoreState>((set, get) => ({
           if (Math.abs((newClip.startTime + newClip.duration - durationToRevert) - nextClip.startTime) < 0.1) {
             const updatedNextClip = { ...nextClip, startTime: nextClip.startTime + durationToRevert };
             newClips[clipIndex + 1] = updatedNextClip;
+            newClips = rippleAfter(newClips, clipIndex + 1, durationToRevert);
           }
         }
 

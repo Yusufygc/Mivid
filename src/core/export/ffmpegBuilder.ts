@@ -1,10 +1,32 @@
-import { Clip, Keyframe, Track } from '@/types/timeline';
+import { Clip, EffectSettings, Keyframe, Track, Transition } from '@/types/timeline';
+import {
+  BLUR_TRANSITION_SIGMA_RATIO,
+  TransitionSide,
+  alphaFactorExpr,
+  easedExpr,
+  fadesAlpha,
+  progressExpr,
+  slideOffsetExpr,
+  zoomFactorExpr,
+} from '@/core/transitions/transitions';
 import { hasKeyframes } from '@/core/animation/keyframes';
 import { buildFadeFilters } from '@/core/audio/fades';
 import { ffmpegEqFilter } from '@/core/color/colorGrading';
 import { escapeFilterPath, resolveFontFile, WINDOWS_FONT_DIRECTORY } from './fonts';
 import { ffmpegChromakeyFilter } from '@/core/chroma/chromaKey';
-import { backdropSigmaPx, blurSigmaPx, featherSigmaPx, pixelBlockPx } from '@/core/effects/regionEffects';
+import {
+  DEFAULT_TINT_COLOR,
+  VIGNETTE_INNER,
+  backdropSigmaPx,
+  blurSigmaPx,
+  coversWholeFrame,
+  featherSigmaPx,
+  pixelBlockPx,
+  sharpenKernel,
+  strengthOfSlice,
+  strengthSliceCount,
+  tintAlpha,
+} from '@/core/effects/regionEffects';
 import { ffmpegFitFilter } from '@/core/layout/fit';
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
@@ -197,10 +219,11 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
       `crop=${project.width}:${project.height},gblur=sigma=${formatNumber(sigma)}:steps=2,format=yuva420p`;
     const backdropOpacity = clip.transform?.opacity ?? 1;
     if (backdropOpacity < 1) backdropFilters += `,colorchannelmixer=aa=${backdropOpacity.toFixed(2)}`;
-    if (clip.transitionIn && (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black')) {
+    // The backdrop fades with the clip for every transition that fades the clip (linear; masks and slides are not applied to it)
+    if (clip.transitionIn && fadesAlpha(clip.transitionIn.type)) {
       backdropFilters += `,fade=t=in:st=${startTime}:d=${clip.transitionIn.duration.toFixed(2)}:alpha=1`;
     }
-    if (clip.transitionOut && (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black')) {
+    if (clip.transitionOut && fadesAlpha(clip.transitionOut.type)) {
       const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
       backdropFilters += `,fade=t=out:st=${outStart}:d=${clip.transitionOut.duration.toFixed(2)}:alpha=1`;
     }
@@ -230,25 +253,33 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
     clipFilters += `,colorchannelmixer=aa=${opacity.toFixed(2)}`;
   }
 
-  // Transitions (Alpha fading)
-  if (clip.transitionIn && (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black')) {
-    clipFilters += `,fade=t=in:st=${startTime}:d=${clip.transitionIn.duration.toFixed(2)}:alpha=1`;
+  // Linear dissolve / fade: FFmpeg's own fade filter. Eased dissolves and the other types are processed per frame below.
+  if (isLinearFade(clip.transitionIn)) {
+    clipFilters += `,fade=t=in:st=${startTime}:d=${clip.transitionIn!.duration.toFixed(2)}:alpha=1`;
   }
-  if (clip.transitionOut && (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black')) {
-    const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
-    clipFilters += `,fade=t=out:st=${outStart}:d=${clip.transitionOut.duration.toFixed(2)}:alpha=1`;
+  if (isLinearFade(clip.transitionOut)) {
+    const outStart = (endTimeNum - clip.transitionOut!.duration).toFixed(2);
+    clipFilters += `,fade=t=out:st=${outStart}:d=${clip.transitionOut!.duration.toFixed(2)}:alpha=1`;
   }
 
   filterGraph.push(`${clipFilters}[${clipTag}]`);
 
   // Scale and rotation
   const scaleKeyframes = clip.keyframes?.scale;
-  const scaleAnimated = hasContent(scaleKeyframes);
   const rotationKeyframes = clip.keyframes?.rotation;
   const staticRotation = clip.transform?.rotation ?? 0;
   const rotated = hasContent(rotationKeyframes) || Math.abs(staticRotation) > 1e-6;
   const staticScaleX = clip.transform?.scaleX ?? 1;
   const staticScaleY = clip.transform?.scaleY ?? 1;
+
+  // A zoom transition multiplies the scale while it runs (the factor is 1 outside its window)
+  const zoomFactors: string[] = [];
+  for (const [side, transition] of [['in', clip.transitionIn], ['out', clip.transitionOut]] as const) {
+    if (transition?.type === 'zoom' && transition.duration > 0) {
+      zoomFactors.push(zoomFactorExpr(transitionEase(transition, side, 't', clip.startTime, endTimeNum)));
+    }
+  }
+  const scaleAnimated = hasContent(scaleKeyframes) || zoomFactors.length > 0;
 
   const rotateFilter = (): string => {
     const degrees = hasContent(rotationKeyframes)
@@ -259,7 +290,10 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
     return `rotate=a='${degrees}*PI/180':ow='${side}':oh='${side}':c=none`;
   };
   const animatedScaleFilter = (baseW: string, baseH: string): string => {
-    const scaleExpr = buildKeyframeExpr(scaleKeyframes!, clip.startTime, 't');
+    const factors = [hasContent(scaleKeyframes) ? `(${buildKeyframeExpr(scaleKeyframes, clip.startTime, 't')})` : '', ...zoomFactors].filter(
+      Boolean
+    );
+    const scaleExpr = factors.join('*');
     // Evaluated per frame (t = timeline seconds); sizes stay even for the chroma planes
     const evenSize = (dimension: string) => `max(2,trunc(${dimension}*(${scaleExpr})/2)*2)`;
     return `scale=w='${evenSize(baseW)}':h='${evenSize(baseH)}':eval=frame`;
@@ -269,28 +303,6 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
   // then scaled and rotated like any other layer. Stretched footage keeps the original single scale step.
   const fitted = clip.type !== 'text' && !!clip.fit && clip.fit !== 'stretch';
   const fitFilter = ffmpegFitFilter(clip.fit, project.width, project.height);
-
-  if (scaleAnimated && rotated) {
-    // Rotate at full size first (rotate cannot follow a changing frame size), then scale the rotated frame.
-    // Equivalent to scale-then-rotate because animated scale is uniform.
-    const toFrame = fitted ? fitFilter : `scale=${project.width}:${project.height}`;
-    filterGraph.push(
-      `[${clipTag}]${toFrame},${rotateFilter()},${animatedScaleFilter('iw', 'ih')}[${scaledTag}]`
-    );
-  } else if (scaleAnimated) {
-    filterGraph.push(
-      fitted
-        ? `[${clipTag}]${fitFilter},${animatedScaleFilter('iw', 'ih')}[${scaledTag}]`
-        : `[${clipTag}]${animatedScaleFilter(String(project.width), String(project.height))}[${scaledTag}]`
-    );
-  } else {
-    const scaleW = Math.round(project.width * staticScaleX);
-    const scaleH = Math.round(project.height * staticScaleY);
-    const resize = fitted
-      ? `${fitFilter}${scaleW !== project.width || scaleH !== project.height ? `,scale=${scaleW}:${scaleH}` : ''}`
-      : `scale=${scaleW}:${scaleH}`;
-    filterGraph.push(`[${clipTag}]${resize}${rotated ? `,${rotateFilter()}` : ''}[${scaledTag}]`);
-  }
 
   // Position: offset from the canvas center, same as the preview. Scaled or rotated frames are centered first.
   const posX = Math.round(clip.transform?.x ?? 0);
@@ -312,29 +324,153 @@ const pushVisualLayer = ({ project, filterGraph, source, clip, index, baseLabel 
   };
 
   let xExpr = axisExpr(clip.keyframes?.x, posX, '(W-w)/2');
-  const yExpr = axisExpr(clip.keyframes?.y, posY, '(H-h)/2');
+  let yExpr = axisExpr(clip.keyframes?.y, posY, '(H-h)/2');
+  let yUsesExpression = needsCentering || hasContent(clip.keyframes?.y);
 
-  if (clip.transitionIn && (clip.transitionIn.type === 'slide' || clip.transitionIn.type === 'wipe')) {
-    const d = clip.transitionIn.duration.toFixed(2);
-    xExpr += `+if(lt(t,${startTime}+${d}),W*(1-(t-${startTime})/${d}),0)`;
-    usesExpression = true;
-  }
-
-  if (clip.transitionOut && (clip.transitionOut.type === 'slide' || clip.transitionOut.type === 'wipe')) {
-    const d = clip.transitionOut.duration.toFixed(2);
-    const outStart = (endTimeNum - clip.transitionOut.duration).toFixed(2);
-    xExpr += `+if(gt(t,${outStart}),-W*(t-${outStart})/${d},0)`;
-    usesExpression = true;
+  // Slide: the position follows the eased progress (zero outside the transition window)
+  for (const [side, transition] of [['in', clip.transitionIn], ['out', clip.transitionOut]] as const) {
+    if (transition?.type !== 'slide' || transition.duration <= 0) continue;
+    const offset = slideOffsetExpr(transition, side, transitionEase(transition, side, 't', clip.startTime, endTimeNum));
+    if (offset.x !== '0') {
+      xExpr += `+(${offset.x})`;
+      usesExpression = true;
+    }
+    if (offset.y !== '0') {
+      yExpr += `+(${offset.y})`;
+      yUsesExpression = true;
+    }
   }
 
   const quote = (expr: string, isExpr: boolean): string => (isExpr ? `'${expr}'` : expr);
-  const yUsesExpression = needsCentering || hasContent(clip.keyframes?.y);
 
-  filterGraph.push(
-    `[${underBase}][${scaledTag}]overlay=x=${quote(xExpr, usesExpression)}:y=${quote(yExpr, yUsesExpression)}:enable='between(t,${startTime},${endTime})'[${nextBase}]`
-  );
+  /** Scale / rotate one stream and overlay it on `under` while `window` is on */
+  const emitLayer = (input: string, framed: boolean, suffix: string, under: string, out: string, window: [string, string]): void => {
+    const scaled = `${scaledTag}${suffix}`;
+    const toFrame = fitted ? fitFilter : `scale=${project.width}:${project.height}`;
+    if (scaleAnimated && rotated) {
+      // Rotate at full size first (rotate cannot follow a changing frame size), then scale the rotated frame.
+      // Equivalent to scale-then-rotate because animated scale is uniform.
+      filterGraph.push(`[${input}]${framed ? '' : `${toFrame},`}${rotateFilter()},${animatedScaleFilter('iw', 'ih')}[${scaled}]`);
+    } else if (scaleAnimated) {
+      filterGraph.push(
+        fitted || framed
+          ? `[${input}]${framed ? '' : `${fitFilter},`}${animatedScaleFilter('iw', 'ih')}[${scaled}]`
+          : `[${input}]${animatedScaleFilter(String(project.width), String(project.height))}[${scaled}]`
+      );
+    } else {
+      const scaleW = Math.round(project.width * staticScaleX);
+      const scaleH = Math.round(project.height * staticScaleY);
+      const sized = scaleW !== project.width || scaleH !== project.height;
+      let resize: string;
+      if (framed) resize = sized ? `scale=${scaleW}:${scaleH}` : 'null';
+      else resize = fitted ? `${fitFilter}${sized ? `,scale=${scaleW}:${scaleH}` : ''}` : `scale=${scaleW}:${scaleH}`;
+      filterGraph.push(`[${input}]${resize}${rotated ? `,${rotateFilter()}` : ''}[${scaled}]`);
+    }
+    filterGraph.push(
+      `[${under}][${scaled}]overlay=x=${quote(xExpr, usesExpression)}:y=${quote(yExpr, yUsesExpression)}:enable='between(t,${window[0]},${window[1]})'[${out}]`
+    );
+  };
 
-  return nextBase;
+  // Transitions that need the pixels (masks, eased alpha, blur) run on the frame-sized layer, and only for their own
+  // time window: the layer is split into head / middle / tail, each overlaid for its own range.
+  const windowedIn = isWindowed(clip.transitionIn) ? clip.transitionIn! : null;
+  const windowedOut = isWindowed(clip.transitionOut) ? clip.transitionOut! : null;
+
+  let current: string;
+  if (!windowedIn && !windowedOut) {
+    emitLayer(clipTag, false, '', underBase, nextBase, [startTime, endTime]);
+    current = nextBase;
+  } else {
+    const framedTag = `framed_${index}`;
+    filterGraph.push(`[${clipTag}]${fitted ? fitFilter : `scale=${project.width}:${project.height}`}[${framedTag}]`);
+
+    const inEnd = windowedIn ? startTimeNum + windowedIn.duration : startTimeNum;
+    const outStart = windowedOut ? Math.max(inEnd, endTimeNum - windowedOut.duration) : endTimeNum;
+    const parts: Array<{ tag: string; from: number; to: number; chain: string }> = [];
+    if (windowedIn) {
+      parts.push({ tag: 'h', from: startTimeNum, to: inEnd, chain: transitionPixelChain(windowedIn, 'in', project, clip.startTime, endTimeNum) });
+    }
+    if (outStart > inEnd + 1e-6) parts.push({ tag: 'm', from: inEnd, to: outStart, chain: '' });
+    if (windowedOut) {
+      parts.push({ tag: 't', from: outStart, to: endTimeNum, chain: transitionPixelChain(windowedOut, 'out', project, clip.startTime, endTimeNum) });
+    }
+
+    const branchTags = parts.map((part) => `${framedTag}_${part.tag}`);
+    filterGraph.push(`[${framedTag}]split=${parts.length}${branchTags.map((t) => `[${t}]`).join('')}`);
+
+    current = underBase;
+    parts.forEach((part, i) => {
+      const branch = branchTags[i];
+      const trimmed = `${branch}_c`;
+      const range = `trim=start=${part.from.toFixed(3)}:end=${part.to.toFixed(3)}`;
+      filterGraph.push(`[${branch}]${range}${part.chain ? `,${part.chain}` : ''}[${trimmed}]`);
+      const out = i === parts.length - 1 ? nextBase : `${nextBase}_${part.tag}`;
+      emitLayer(trimmed, true, `_${part.tag}`, current, out, [part.from.toFixed(3), part.to.toFixed(3)]);
+      current = out;
+    });
+  }
+
+  // Flash: a white layer over the whole frame whose opacity falls away from the cut
+  for (const [side, transition] of [['in', clip.transitionIn], ['out', clip.transitionOut]] as const) {
+    if (transition?.type !== 'flash' || transition.duration <= 0) continue;
+    const d = transition.duration;
+    const from = side === 'in' ? startTimeNum : endTimeNum - d;
+    const flashTag = `flash_${side}_${index}`;
+    const local = side === 'in' ? `clip(T/${formatNumber(d)},0,1)` : `clip(1-T/${formatNumber(d)},0,1)`;
+    const e = easedExpr(local, transition.easing);
+    filterGraph.push(
+      `color=c=white:s=${project.width}x${project.height}:r=${project.fps}:d=${d.toFixed(3)},format=yuva420p,` +
+        `geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='255*(1-(${e}))',setpts=PTS+${from.toFixed(3)}/TB[${flashTag}]`
+    );
+    const out = `${nextBase}_f${side}`;
+    filterGraph.push(`[${current}][${flashTag}]overlay=enable='between(t,${from.toFixed(3)},${(from + d).toFixed(3)})'[${out}]`);
+    current = out;
+  }
+
+  return current;
+};
+
+/** Eased progress of a transition as an FFmpeg expression of time */
+const transitionEase = (
+  transition: Transition,
+  side: TransitionSide,
+  timeVar: 't' | 'T',
+  clipStart: number,
+  clipEnd: number
+): string => easedExpr(progressExpr(side, timeVar, clipStart, clipEnd, transition.duration), transition.easing);
+
+/** Dissolve and fade at the default (linear) easing use FFmpeg's fade filter */
+const isLinearFade = (transition: Transition | undefined): boolean =>
+  !!transition &&
+  transition.duration > 0 &&
+  (transition.type === 'cross-dissolve' || transition.type === 'fade-to-black') &&
+  transition.easing !== 'ease-in-out';
+
+/** Transitions that change pixels of the layer: masks, blur, zoom's alpha and eased dissolves */
+const isWindowed = (transition: Transition | undefined): boolean =>
+  !!transition &&
+  transition.duration > 0 &&
+  (transition.type === 'wipe' ||
+    transition.type === 'iris' ||
+    transition.type === 'blur' ||
+    transition.type === 'zoom' ||
+    (fadesAlpha(transition.type) && !isLinearFade(transition)));
+
+/** Filters for the transition window of the frame-sized layer: blur, then the alpha factor through geq (T = timeline seconds) */
+const transitionPixelChain = (
+  transition: Transition,
+  side: TransitionSide,
+  project: ProjectSettings,
+  clipStart: number,
+  clipEnd: number
+): string => {
+  const filters: string[] = [];
+  if (transition.type === 'blur') {
+    filters.push(`gblur=sigma=${formatNumber(project.height * BLUR_TRANSITION_SIGMA_RATIO)}:steps=2`);
+  }
+  const factor = alphaFactorExpr(transition, side, transitionEase(transition, side, 'T', clipStart, clipEnd));
+  if (factor) filters.push(`geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*(${factor})'`);
+  return filters.join(',');
 };
 
 interface RegionEffectParams {
@@ -371,6 +507,8 @@ const pushRegionMask = ({ project, filterGraph, clip, index }: RegionEffectParam
   if (margin > 0) {
     shape += `,pad=${paddedW}:${paddedH}:${margin}:${margin}:color=black,gblur=sigma=${formatNumber(sigma)}`;
   }
+  // Inverted: the effect applies everywhere except the region, so the shape is black on a white frame
+  if (effect.invert) shape += `,geq=lum='255-lum(X,Y)'`;
   // 2. Repeat the frame for the whole clip
   shape += `,loop=loop=-1:size=1:start=0,setpts=N/(${fps}*TB),trim=duration=${duration.toFixed(3)},format=yuv420p`;
 
@@ -398,7 +536,7 @@ const pushRegionMask = ({ project, filterGraph, clip, index }: RegionEffectParam
 
   const maskTag = `fx_mask_${index}`;
   filterGraph.push(
-    `color=c=black:s=${W}x${H}:r=${fps}:d=${duration.toFixed(3)},format=yuv420p[fx_black_${index}]`
+    `color=c=${effect.invert ? 'white' : 'black'}:s=${W}x${H}:r=${fps}:d=${duration.toFixed(3)},format=yuv420p[fx_black_${index}]`
   );
   filterGraph.push(
     `[fx_black_${index}][${shapeTag}]overlay=x='${axis(clip.keyframes?.x, posX, '(W-w)/2')}':y='${axis(clip.keyframes?.y, posY, '(H-h)/2')}':eval=frame:shortest=1,format=yuv420p[${maskTag}]`
@@ -406,43 +544,135 @@ const pushRegionMask = ({ project, filterGraph, clip, index }: RegionEffectParam
   return maskTag;
 };
 
+/** The processing filter of an effect for one strength (the vignette is a layer of its own, see pushVignetteLayer) */
+const regionKindFilter = (effect: EffectSettings, strength: number, project: ProjectSettings): string => {
+  const { width: W, height: H } = project;
+  switch (effect.kind) {
+    case 'blur':
+      return `gblur=sigma=${formatNumber(blurSigmaPx(strength, H))}:steps=2`;
+    case 'pixelate': {
+      const block = pixelBlockPx(strength, H);
+      return `scale=${Math.max(1, Math.ceil(W / block))}:${Math.max(1, Math.ceil(H / block))}:flags=area,scale=${W}:${H}:flags=neighbor`;
+    }
+    case 'sharpen': {
+      // The same 3x3 kernel as the preview's SVG filter, on RGB planes
+      const kernel = sharpenKernel(strength).map(formatNumber).join(' ');
+      return `format=gbrp,convolution=0m='${kernel}':1m='${kernel}':2m='${kernel}',format=yuv420p`;
+    }
+    default:
+      return 'drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill';
+  }
+};
+
+/** Darkening layer of a vignette for one time slice: a black frame whose alpha follows vignetteAlpha(), looped from one frame */
+const pushVignetteLayer = (
+  { project, filterGraph, index }: RegionEffectParams,
+  strength: number,
+  from: number,
+  to: number,
+  slice: number,
+  under: string
+): string => {
+  const { width: W, height: H, fps } = project;
+  const tag = `fx_vig_${index}_${slice}`;
+  const out = `fx_out_${index}_${slice}`;
+  const radius = `hypot(X+0.5-W/2,Y+0.5-H/2)/hypot(W/2,H/2)`;
+  const ramp = `pow(clip((${radius}-${formatNumber(VIGNETTE_INNER)})/${formatNumber(1 - VIGNETTE_INNER)},0,1),2)`;
+  filterGraph.push(
+    `color=c=black:s=${W}x${H}:r=${fps}:d=${(1 / fps).toFixed(5)},format=yuva420p,` +
+      `geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='255*${formatNumber(strength)}*${ramp}',` +
+      `loop=loop=-1:size=1:start=0,setpts=N/(${fps}*TB),trim=duration=${(to - from).toFixed(3)},setpts=PTS+${from.toFixed(3)}/TB[${tag}]`
+  );
+  filterGraph.push(`[${under}][${tag}]overlay=enable='between(t,${from.toFixed(3)},${to.toFixed(3)})'[${out}]`);
+  return out;
+};
+
 /**
- * Region effect over everything drawn so far: the frame is processed (blur, mosaic or black), cut to the
- * region with the mask and overlaid for the clip's time range. Returns the new base label.
+ * Effect over everything drawn so far: the frame is processed (blur, mosaic, tint, sharpen or black), cut to the
+ * region with the mask (or its inverse; no mask when the effect covers the whole frame) and overlaid for the clip's
+ * time range. A strength ramp is rendered as constant-strength slices, the same steps the preview uses.
+ * Returns the new base label.
  */
 const pushRegionEffect = (params: RegionEffectParams): string => {
   const { project, filterGraph, clip, index, baseLabel } = params;
   const effect = clip.effect!;
-  const { width: W, height: H } = project;
   const start = clip.startTime;
   const end = clip.startTime + clip.duration;
+  const wholeFrame = coversWholeFrame(effect);
+
+  const count = strengthSliceCount(effect, clip.duration);
+  const slices = Array.from({ length: count }, (_, i) => ({
+    from: start + (clip.duration * i) / count,
+    to: start + (clip.duration * (i + 1)) / count,
+    strength: strengthOfSlice(effect, i, count),
+  }));
+
+  if (effect.kind === 'vignette') {
+    let current = baseLabel;
+    slices.forEach((slice, i) => {
+      current = pushVignetteLayer(params, slice.strength, slice.from, slice.to, i, current);
+    });
+    return current;
+  }
 
   const keep = `fx_keep_${index}`;
   const copy = `fx_copy_${index}`;
-  const processed = `fx_proc_${index}`;
-  const merged = `fx_merged_${index}`;
   const next = `fx_out_${index}`;
-
-  let kindFilter: string;
-  if (effect.kind === 'blur') {
-    kindFilter = `gblur=sigma=${formatNumber(blurSigmaPx(effect.strength, H))}:steps=2`;
-  } else if (effect.kind === 'pixelate') {
-    const block = pixelBlockPx(effect.strength, H);
-    kindFilter = `scale=${Math.max(1, Math.ceil(W / block))}:${Math.max(1, Math.ceil(H / block))}:flags=area,scale=${W}:${H}:flags=neighbor`;
-  } else {
-    kindFilter = 'drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill';
-  }
+  const sliceTag = (prefix: string, i: number) => (count === 1 ? `${prefix}_${index}` : `${prefix}_${index}_${i}`);
 
   filterGraph.push(`[${baseLabel}]split[${keep}][${copy}]`);
-  filterGraph.push(`[${copy}]trim=start=${start.toFixed(2)}:end=${end.toFixed(2)},${kindFilter},format=yuv420p[${processed}]`);
+  if (count > 1) {
+    filterGraph.push(`[${copy}]split=${count}${slices.map((_, i) => `[${sliceTag('fx_cs', i)}]`).join('')}`);
+  }
 
-  const mask = pushRegionMask(params);
-  // The mask stream starts at 0; move it to the clip's place on the timeline so it lines up with the processed frames
-  filterGraph.push(`[${mask}]setpts=PTS+${start.toFixed(2)}/TB[fx_mask_t_${index}]`);
-  filterGraph.push(`[${processed}][fx_mask_t_${index}]alphamerge[${merged}]`);
-  filterGraph.push(
-    `[${keep}][${merged}]overlay=enable='between(t,${start.toFixed(2)},${end.toFixed(2)})'[${next}]`
-  );
+  let maskStream: string | null = null;
+  if (!wholeFrame) {
+    const mask = pushRegionMask(params);
+    // The mask stream starts at 0; move it to the clip's place on the timeline so it lines up with the processed frames
+    maskStream = `fx_mask_t_${index}`;
+    filterGraph.push(`[${mask}]setpts=PTS+${start.toFixed(2)}/TB[${maskStream}]`);
+    if (count > 1) {
+      filterGraph.push(`[${maskStream}]split=${count}${slices.map((_, i) => `[${sliceTag('fx_ms', i)}]`).join('')}`);
+    }
+  }
+
+  let current = keep;
+  slices.forEach((slice, i) => {
+    const from = count === 1 ? start : slice.from;
+    const to = count === 1 ? end : slice.to;
+    const input = count === 1 ? copy : sliceTag('fx_cs', i);
+    const processed = sliceTag('fx_proc', i);
+    if (effect.kind === 'tint') {
+      // A color layer of the tint opacity over the copy (drawbox would ignore the alpha on a frame without alpha)
+      const wash = sliceTag('fx_wash', i);
+      const trimmed = sliceTag('fx_tr', i);
+      filterGraph.push(
+        `color=c=${(effect.color || DEFAULT_TINT_COLOR).toLowerCase()}:s=${project.width}x${project.height}:r=${project.fps}:d=${(to - from + 0.1).toFixed(3)},` +
+          `format=yuva420p,colorchannelmixer=aa=${formatNumber(tintAlpha(slice.strength))},setpts=PTS+${from.toFixed(2)}/TB[${wash}]`
+      );
+      filterGraph.push(`[${input}]trim=start=${from.toFixed(2)}:end=${to.toFixed(2)}[${trimmed}]`);
+      filterGraph.push(`[${trimmed}][${wash}]overlay,format=yuv420p[${processed}]`);
+    } else {
+      filterGraph.push(
+        `[${input}]trim=start=${from.toFixed(2)}:end=${to.toFixed(2)},${regionKindFilter(effect, slice.strength, project)},format=yuv420p[${processed}]`
+      );
+    }
+
+    let layer = processed;
+    if (maskStream) {
+      let maskPart = maskStream;
+      if (count > 1) {
+        maskPart = sliceTag('fx_mt', i);
+        filterGraph.push(`[${sliceTag('fx_ms', i)}]trim=start=${from.toFixed(2)}:end=${to.toFixed(2)}[${maskPart}]`);
+      }
+      layer = sliceTag('fx_merged', i);
+      filterGraph.push(`[${processed}][${maskPart}]alphamerge[${layer}]`);
+    }
+
+    const out = i === count - 1 ? next : sliceTag('fx_o', i);
+    filterGraph.push(`[${current}][${layer}]overlay=enable='between(t,${from.toFixed(2)},${to.toFixed(2)})'[${out}]`);
+    current = out;
+  });
   return next;
 };
 

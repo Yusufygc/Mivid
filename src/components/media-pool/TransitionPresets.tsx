@@ -1,40 +1,16 @@
 import React from 'react';
 import { Layers, Plus } from 'lucide-react';
 import { useTimelineStore } from '@/stores/useTimelineStore';
+import { TRANSITION_DESCRIPTIONS, TRANSITION_LABELS, TRANSITION_TYPES } from '@/core/transitions/transitions';
 
-interface TransitionTemplate {
-  id: string;
-  name: string;
-  type: 'cross-dissolve' | 'fade-to-black' | 'slide' | 'wipe';
-  description: string;
-}
+const TRANSITIONS = TRANSITION_TYPES.map((type) => ({
+  id: `t-${type}`,
+  type,
+  name: TRANSITION_LABELS[type],
+  description: TRANSITION_DESCRIPTIONS[type],
+}));
 
-const TRANSITIONS: TransitionTemplate[] = [
-  {
-    id: 't-cross-dissolve',
-    name: 'Çapraz Geçiş',
-    type: 'cross-dissolve',
-    description: 'Yumuşak bir şekilde iki klibi birleştirir.',
-  },
-  {
-    id: 't-fade-black',
-    name: 'Kararma (Fade to Black)',
-    type: 'fade-to-black',
-    description: 'Siyaha karararak diğer klibe geçer.',
-  },
-  {
-    id: 't-slide',
-    name: 'Kaydırma (Slide)',
-    type: 'slide',
-    description: 'Yeni klip ekrana doğru kayarak girer.',
-  },
-  {
-    id: 't-wipe',
-    name: 'Silme (Wipe)',
-    type: 'wipe',
-    description: 'Yeni klip bir silgi gibi eskini siler.',
-  }
-];
+type TransitionTemplate = (typeof TRANSITIONS)[number];
 
 export const TransitionPresets: React.FC = () => {
   const { selectedClipId, addTransition } = useTimelineStore();

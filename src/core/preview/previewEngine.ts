@@ -6,7 +6,8 @@ import { Logger } from '@/core/logger';
 import { resolveTransform } from '@/core/animation/keyframes';
 import { previewVolume } from '@/core/audio/fades';
 import { canvasFilter } from '@/core/color/colorGrading';
-import { backdropSigmaPx } from '@/core/effects/regionEffects';
+import { backdropSigmaPx, coversWholeFrame, effectStrengthAt } from '@/core/effects/regionEffects';
+import { combineTransitionVisuals } from '@/core/transitions/transitions';
 import { clipToFrame, fitRect } from '@/core/layout/fit';
 import { RegionEffectRenderer } from './effectRenderer';
 import { ChromaKeyRenderer } from './chromaRenderer';
@@ -150,6 +151,8 @@ export class PreviewEngine {
     const { width, height } = this.currentProject;
 
     if (clip.type === 'effect' && clip.effect) {
+      // An effect on the whole frame has no region to move or resize
+      if (coversWholeFrame(clip.effect)) return null;
       return { x0: -clip.effect.width / 2, y0: -clip.effect.height / 2, x1: clip.effect.width / 2, y1: clip.effect.height / 2 };
     }
 
@@ -776,31 +779,15 @@ export class PreviewEngine {
         this.currentTime - clip.startTime
       );
 
-      const timeInClip = this.currentTime - clip.startTime;
-      const timeLeftInClip = (clip.startTime + clip.duration) - this.currentTime;
-
-      let transitionAlpha = 1;
-      let transitionTranslateX = 0;
-
-      // Transition In
-      if (clip.transitionIn && timeInClip >= 0 && timeInClip < clip.transitionIn.duration) {
-        const progress = timeInClip / clip.transitionIn.duration;
-        if (clip.transitionIn.type === 'cross-dissolve' || clip.transitionIn.type === 'fade-to-black') {
-          transitionAlpha = progress;
-        } else if (clip.transitionIn.type === 'slide' || clip.transitionIn.type === 'wipe') {
-          transitionTranslateX = width * (1 - progress);
-        }
-      }
-
-      // Transition Out
-      if (clip.transitionOut && timeLeftInClip >= 0 && timeLeftInClip < clip.transitionOut.duration) {
-        const progress = timeLeftInClip / clip.transitionOut.duration;
-        if (clip.transitionOut.type === 'cross-dissolve' || clip.transitionOut.type === 'fade-to-black') {
-          transitionAlpha = progress;
-        } else if (clip.transitionOut.type === 'slide' || clip.transitionOut.type === 'wipe') {
-          transitionTranslateX = -width * (1 - progress);
-        }
-      }
+      // Transitions: alpha, slide offset, zoom, wipe / iris masks (in layer coordinates), blur and flash.
+      // The export reads the same numbers (core/transitions).
+      const { visual: transition, rects: wipeRects, irisRadii, flashes } = combineTransitionVisuals(
+        clip,
+        this.currentTime,
+        width,
+        height
+      );
+      const transitionAlpha = transition.alpha;
 
       // Blurred backdrop: the same footage, cover-fitted and blurred, fills the frame behind the clip
       if (clip.backdropBlur && clip.backdropBlur > 0 && srcW > 0 && srcH > 0) {
@@ -821,14 +808,28 @@ export class PreviewEngine {
 
       this.ctx.globalAlpha = opacity * transitionAlpha;
 
-      this.ctx.translate(width / 2 + posX + transitionTranslateX, height / 2 + posY);
+      this.ctx.translate(width / 2 + posX + transition.dx, height / 2 + posY + transition.dy);
       if (rotation !== 0) {
         this.ctx.rotate((rotation * Math.PI) / 180);
       }
-      this.ctx.scale(scaleX, scaleY);
+      this.ctx.scale(scaleX * transition.scale, scaleY * transition.scale);
+
+      // Wipe and iris show part of the layer: the frame box centered on the layer origin
+      for (const r of wipeRects) {
+        this.ctx.beginPath();
+        this.ctx.rect(-width / 2 + r.x0 * width, -height / 2 + r.y0 * height, (r.x1 - r.x0) * width, (r.y1 - r.y0) * height);
+        this.ctx.clip();
+      }
+      for (const radius of irisRadii) {
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        this.ctx.clip();
+      }
 
       if (srcW > 0 && srcH > 0) {
-        this.ctx.filter = canvasFilter(clip.colorGrading); // restored by ctx.restore() below
+        const grading = canvasFilter(clip.colorGrading);
+        const blur = transition.blurPx > 0 ? `blur(${transition.blurPx.toFixed(2)}px)` : '';
+        this.ctx.filter = grading === 'none' ? blur || 'none' : `${grading} ${blur}`.trim(); // restored by ctx.restore() below
         const fit = clip.fit ?? 'stretch';
         const rect = fitRect(fit, srcW, srcH, width, height);
         if (fit === 'cover') {
@@ -840,6 +841,15 @@ export class PreviewEngine {
         this.ctx.drawImage(drawable, rect.x - width / 2, rect.y - height / 2, rect.w, rect.h);
       }
       this.ctx.restore();
+
+      // A flash lays white over the whole frame for the length of the transition
+      for (const alpha of flashes) {
+        this.ctx.save();
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(0, 0, width, height);
+        this.ctx.restore();
+      }
     }
 
     this.setLoading(waitingForPicture);
@@ -848,7 +858,9 @@ export class PreviewEngine {
     for (const clip of activeClips) {
       if (clip.type !== 'effect' || !clip.effect) continue;
       const t = resolveTransform(clip, this.currentTime - clip.startTime);
-      this.effectRenderer.apply(this.ctx, this.canvas, clip.effect, {
+      // A strength ramp plays in the same steps the export renders
+      const strength = effectStrengthAt(clip.effect, this.currentTime - clip.startTime, clip.duration);
+      this.effectRenderer.apply(this.ctx, this.canvas, { ...clip.effect, strength }, {
         cx: width / 2 + t.x,
         cy: height / 2 + t.y,
         width: clip.effect.width * t.scaleX,

@@ -11,8 +11,10 @@
 ## Çizim sırası (`drawComposition`)
 
 1. Aktif klipler `getActiveClipsAtTime` ile bulunur: kanallar tersten gezilir, `zIndex`'e göre sıralanır, yani **üst kanal üstte**.
-2. Görsel klipler (video/resim): `fitRect` ile `fit` moduna göre yerleştirilir; `backdropBlur > 0` ise klibin altına tuvali dolduran bulanık kopya çizilir; sonra renk ayarı (canvas filter), chroma key, transform (`resolveTransform`), geçiş opaklığı/ofseti.
-3. **Efekt klipleri** (bölge blur/mozaik/siyah kutu): `effectRenderer.ts` ana canvas'ın işlenmiş kopyasını şekil maskesiyle (`destination-in`) geri çizer. Video katmanlarının üstünde, metinlerin altında.
+2. Görsel klipler (video/resim): `fitRect` ile `fit` moduna göre yerleştirilir; `backdropBlur > 0` ise klibin altına tuvali dolduran bulanık kopya çizilir; sonra renk ayarı (canvas filter), chroma key, transform (`resolveTransform`) ve **geçişler**: `combineTransitionVisuals` alfa, kayma ofseti (`dx`, `dy`), zoom ölçeği, wipe dikdörtgeni / iris dairesi (`ctx.clip()`, katman koordinatında), geçiş bulanıklığı ve flaş verir; flaş klip çizildikten sonra tüm karenin üstüne beyaz `fillRect` olarak gelir.
+3. **Efekt klipleri** (blur, mozaik, siyah kutu, renk tonu, keskinleştir, vinyet): `effectRenderer.ts` ana canvas'ın işlenmiş kopyasını şekil maskesiyle geri çizer (`destination-in`; **ters** modda `destination-out`; **tüm kare**/vinyette maske yok). Güç, `effectStrengthAt` ile 0,2 sn'lik dilimler halinde okunur. Video katmanlarının üstünde, metinlerin altında.
+   - blur: kenar pikselleri tekrarlanan dolgulu bir canvas bulanıklaştırılır (düz canvas blur'ü kenarda saydamlığa solup koyu çerçeve bırakır; FFmpeg `gblur` kenarı tekrarlar).
+   - tint: kopyanın üstüne renk katmanı (`tintAlpha`); sharpen: `ctx.filter` ile SVG `feConvolveMatrix` (export ile aynı 3x3 çekirdek, okuma gerekmez); vinyet: `vignetteAlpha` değerlerinden 24 duraklı radyal gradyan.
 4. Metin klipleri (animasyon, kenarlık, gölge, kutu).
 5. Seçili klip için tutamaç katmanı (`drawSelectionOverlay`).
 

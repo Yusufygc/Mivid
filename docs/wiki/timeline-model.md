@@ -17,10 +17,11 @@ Zorunlu: `id`, `trackId`, `assetId`, `name`, `type` (`video|audio|image|text|eff
 - `transform`: `x, y` (tuval merkezine göre piksel), `scaleX, scaleY`, `rotation` (derece), `opacity` (0-1), `zIndex`.
 - `audio`: `volume` (0-2), `muted`, `fadeIn`, `fadeOut`, `denoise?` (export'ta `afftdn`, önizlemede yok).
 - `text?`: içerik, yazı tipi ailesi/boyut/kalınlık/italik, hizalama, `stroke`, `shadow`, `backgroundBox`, `animation` (`typewriter|slide|zoom` / `fade`).
-- `transitionIn?`/`transitionOut?`: `cross-dissolve | fade-to-black | slide | wipe`, süre varsayılan 1 sn. Geçiş eklenince klip öncekiyle bindirilir.
+- `transitionIn?`/`transitionOut?`: `Transition { type, duration, direction?, easing? }`. Tipler: `cross-dissolve | fade-to-black | slide | wipe | iris | zoom | flash | blur`. `direction` (`left|right|up|down`) yalnızca slide ve wipe için; `easing` tanımsızsa doğrusal (eski projeler değişmez), yeni geçiş `ease-in-out`. Süre 0,2-3 sn ve komşu klip sürelerinin yarısıyla sınırlı (`clampTransitionSeconds`). Mantık: `src/core/transitions/transitions.ts` ([[preview-engine]], [[export-pipeline]]).
+- **Geçiş bindirmesi:** geçiş eklenince klip komşusunun üstüne `süre` kadar bindirilir (giriş: klip sola, çıkış: sonraki klip sola) ve **arkasındaki bütün klipler aynı miktarda kayar** (ripple), böylece uçta boşluk kalmaz. `updateTransition` süreyi değiştirince bindirme süreye eşit kalır; `removeTransition` zamanı geri verir. Komşuya bitişik değilse (arada boşluk) hiçbir klip kaymaz.
 - `colorGrading?`: parlaklık, kontrast, doygunluk (+ ön ayarlar: Orijinal, Canlı, Parlak, Sinematik, Soluk, Siyah-Beyaz). Export `eq`, önizleme canvas filter.
 - `keyframes?`: `x, y, scale, opacity, rotation` için sıralı `Keyframe { id, time, value, easing }`.
-- `effect?` (yalnızca `effect` kanalındaki klipte): `kind` (`blur|pixelate|blackbox`), `shape` (`rect|ellipse`), `strength`, `feather`, `width`, `height` (proje pikseli, ölçek 1). Bölge `transform` ile (konum/ölçek, keyframe'lenebilir) tanımlanır.
+- `effect?` (yalnızca `effect` kanalındaki klipte): `kind` (`blur|pixelate|blackbox|tint|sharpen|vignette`), `shape` (`rect|ellipse`), `strength`, `feather`, `width`, `height` (proje pikseli, ölçek 1). Bölge `transform` ile (konum/ölçek, keyframe'lenebilir) tanımlanır. Ek alanlar: `invert` (bölge dışına uygula), `fullFrame` (bölgesiz, tüm kare; vinyet her zaman), `color` (renk tonu), `strengthEnd` + `strengthEasing` (klip boyunca güç animasyonu: `strength` → `strengthEnd`). Güç animasyonu **0,2 sn'lik sabit dilimlerle** oynar (`effectStrengthAt`), çünkü FFmpeg filtreleri kare başına güç değiştiremez; önizleme aynı dilimleri kullanır.
 - `fit?`: `stretch` (tanımsızsa eski davranış), `contain`, `cover`. **Yeni video/resim klibi varsayılan `contain`**.
 - `backdropBlur?` (0-1): klibin arkasına tuvali dolduran bulanık kopya.
 - `chromaKey?`: `{ color, similarity, blend }`.
@@ -36,6 +37,10 @@ Zorunlu: `id`, `trackId`, `assetId`, `name`, `type` (`video|audio|image|text|eff
 - `updateClipTransform`: keyframe'li özellik düzenlenirse playhead'e keyframe yazılır. **Oto keyframe** açıksa (`autoKeyframe`, önizleme araç satırındaki düğme) keyframe'siz özellik de keyframe'lenir; ilk keyframe playhead > 0.02 sn'deyse başa eski değeri sabitleyen bir keyframe eklenir.
 - Sol kırpma + keyframe sınırı: bkz. [[known-issues]].
 
+## Bölme
+
+`TimelineEngine.splitClip`: sol yarı giriş geçişini, sağ yarı çıkış geçişini korur (kesim geçiş sayılmaz); efektin güç animasyonu kesimde sürekli devam eder (`splitEffectRamp`: sol yarı `strengthEnd`'i kesim noktasındaki değere, sağ yarı `strength`'i aynı değere alır).
+
 ## Geri alma
 
 `timelineHistory.ts` (`COALESCE_WINDOW_MS = 800`): arka arkaya aynı türden eylemler (sürükleme, slider) tek kayıtta birleşir. Kısayollar Ctrl+Z / Ctrl+Y. Proje açılınca geçmiş temizlenir.
@@ -49,4 +54,4 @@ Zorunlu: `id`, `trackId`, `assetId`, `name`, `type` (`video|audio|image|text|eff
 
 ## Store'lar
 
-`useTimelineStore` (1228 satır, 92 eylem; bölünmesi [[audit-report]] Bulgu 6), `useAssetStore` (içe aktarma, süre/metadata, küçük resim; metadata okunamazsa 10 sn ve 1920x1080 varsayar, Bulgu 10), `useProjectStore` (çözünürlük, en-boy, FPS 24/25/30/50/60).
+`useTimelineStore` (1300+ satır, 94 eylem; bölünmesi [[audit-report]] Bulgu 6), `useAssetStore` (içe aktarma, süre/metadata, küçük resim; metadata okunamazsa 10 sn ve 1920x1080 varsayar, Bulgu 10), `useProjectStore` (çözünürlük, en-boy, FPS 24/25/30/50/60).

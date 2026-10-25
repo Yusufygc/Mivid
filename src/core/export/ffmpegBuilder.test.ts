@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FFmpegCommandBuilder, buildAtempoChain, buildKeyframeExpr } from './ffmpegBuilder';
+import { FFmpegCommandBuilder, buildAtempoChain, buildKeyframeExpr, defaultVideoBitrate } from './ffmpegBuilder';
 import { ProjectSettings } from '@/types/project';
 import { Clip, Keyframe, Track } from '@/types/timeline';
 import { MediaAsset } from '@/types/asset';
@@ -119,6 +119,32 @@ describe('FFmpegCommandBuilder', () => {
     expect(result.filterComplex).toContain("enable='between(t,1.00,5.00)'");
     expect(result.filterComplex).toContain('box=1');
     expect(result.filterComplex).toContain('borderw=3');
+  });
+
+  describe('video encoder', () => {
+    const argsFor = (options: Record<string, unknown>) =>
+      FFmpegCommandBuilder.buildExportCommand(mockProject, buildVideoTrack({}), mockAssets, { outputPath: 'out.mp4', ...options }).args;
+
+    it('uses libx264 with a preset by default', () => {
+      const args = argsFor({});
+      expect(args).toContain('libx264');
+      expect(args).toContain('-preset');
+      expect(args).not.toContain('-b:v');
+    });
+
+    it('uses Media Foundation with a bitrate and no preset when the FFmpeg has no libx264', () => {
+      const args = argsFor({ videoEncoder: 'h264_mf', preset: 'slow' });
+      expect(args[args.indexOf('-c:v') + 1]).toBe('h264_mf');
+      expect(args).toContain('-b:v');
+      expect(args).not.toContain('-preset');
+      expect(args).not.toContain('libx264');
+    });
+
+    it('derives a bitrate from the frame size and stays inside the guard range', () => {
+      expect(defaultVideoBitrate({ width: 1080, height: 1920, fps: 30 })).toBe('6221k');
+      expect(defaultVideoBitrate({ width: 16, height: 16, fps: 1 })).toBe('1000k');
+      expect(defaultVideoBitrate({ width: 16384, height: 16384, fps: 240 })).toBe('100000k');
+    });
   });
 
   const buildVideoTrack = (clipOverrides: Partial<Clip>): Track[] => [

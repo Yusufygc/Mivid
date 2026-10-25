@@ -1,4 +1,5 @@
 mod export_guard;
+mod export_job;
 mod media_access;
 
 use std::io::{BufRead, BufReader};
@@ -7,25 +8,33 @@ use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use export_guard::Policy;
+use export_job::ExportJob;
 use media_access::MediaAccess;
 
 /// Project files bigger than this are not read (a real project is a few hundred kilobytes)
 const MAX_PROJECT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
-fn find_ffmpeg_executable() -> String {
-    let candidate_paths = [
-        "C:\\ffmpeg\\bin\\ffmpeg.exe",
-        "C:\\ffmpeg\\ffmpeg.exe",
-        ".\\ffmpeg.exe",
-        "..\\ffmpeg.exe",
-    ];
+/// Places FFmpeg is looked for, in order. Never a path relative to the working directory: whoever can drop an
+/// `ffmpeg.exe` into the folder the app is started from would get it run.
+fn ffmpeg_candidates(exe_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(dir) = exe_dir {
+        // Next to the app: where a bundled FFmpeg (sidecar) lives
+        candidates.push(dir.join("ffmpeg.exe"));
+    }
+    candidates.push(PathBuf::from("C:\\ffmpeg\\bin\\ffmpeg.exe"));
+    candidates.push(PathBuf::from("C:\\ffmpeg\\ffmpeg.exe"));
+    candidates
+}
 
-    for path_str in candidate_paths {
-        if Path::new(path_str).exists() {
-            return path_str.to_string();
+fn find_ffmpeg_executable() -> String {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    for candidate in ffmpeg_candidates(exe_dir.as_deref()) {
+        if candidate.is_absolute() && candidate.is_file() {
+            return candidate.to_string_lossy().to_string();
         }
     }
-
+    // Last resort: whatever `ffmpeg` the system PATH offers
     "ffmpeg".to_string()
 }
 
@@ -170,6 +179,38 @@ async fn probe_media(access: State<'_, MediaAccess>, path: String) -> Result<Opt
     Ok(parse_has_audio(&String::from_utf8_lossy(&output.stderr)))
 }
 
+/// The H.264 encoder to export with: `libx264` when this FFmpeg has it (GPL builds), else `h264_mf` (Windows Media
+/// Foundation, present in LGPL builds, which is what the app bundles). None when neither exists.
+fn pick_video_encoder(encoders_output: &str) -> Option<&'static str> {
+    let has = |name: &str| encoders_output.lines().any(|l| l.split_whitespace().nth(1) == Some(name));
+    ["libx264", "h264_mf"].into_iter().find(|name| has(name))
+}
+
+#[tauri::command]
+async fn video_encoder() -> Result<String, String> {
+    static CHOSEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    if let Some(name) = CHOSEN.get() {
+        return Ok(name.clone());
+    }
+    let output = Command::new(find_ffmpeg_executable())
+        .args(["-hide_banner", "-encoders"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| format!("FFmpeg çalıştırılamadı: {}", e))?;
+    let name = pick_video_encoder(&String::from_utf8_lossy(&output.stdout))
+        .ok_or_else(|| "Bu FFmpeg sürümünde H.264 kodlayıcı (libx264 ya da h264_mf) yok.".to_string())?;
+    Ok(CHOSEN.get_or_init(|| name.to_string()).clone())
+}
+
+/// The error text `run_ffmpeg_export` returns for a cancelled export (the interface recognizes it)
+const CANCELLED_MESSAGE: &str = "Export iptal edildi.";
+
+#[tauri::command]
+fn cancel_export(job: State<'_, ExportJob>) -> bool {
+    job.cancel()
+}
+
 /// Seconds of output in an FFmpeg stats line (`frame=  90 fps=30 ... time=00:00:03.00 bitrate=...`) and the time text
 fn parse_progress_time(line: &str) -> Option<(f64, String)> {
     let start = line.find("time=")? + 5;
@@ -190,6 +231,7 @@ fn parse_progress_time(line: &str) -> Option<(f64, String)> {
 async fn run_ffmpeg_export(
     app: AppHandle,
     access: State<'_, MediaAccess>,
+    job: State<'_, ExportJob>,
     args: Vec<String>,
     total_duration: Option<f64>,
 ) -> Result<String, String> {
@@ -217,56 +259,86 @@ async fn run_ffmpeg_export(
         }
     }
 
-    let mut child = Command::new(&ffmpeg_bin)
+    if !job.try_begin() {
+        return Err("Bir export zaten çalışıyor.".to_string());
+    }
+
+    let mut child = match Command::new(&ffmpeg_bin)
         .args(&args)
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            format!(
+    {
+        Ok(child) => child,
+        Err(e) => {
+            job.release();
+            return Err(format!(
                 "FFmpeg çalıştırılamadı (Denenen yol: '{}'). Sisteminizde FFmpeg kurulu mu? Hata: {}",
                 ffmpeg_bin, e
-            )
-        })?;
+            ));
+        }
+    };
 
     let total_secs = total_duration.unwrap_or(30.0).max(0.1);
-    let mut all_stderr = String::new();
+    let stderr = child.stderr.take();
+    // The process lives in the job so `cancel_export` can kill it while this command reads its output
+    job.attach(child);
 
-    if let Some(stderr) = child.stderr.take() {
-        // FFmpeg ends its stats lines with a carriage return (the line is rewritten in place), other messages with a
-        // line feed: split on both, or the progress only arrives in one piece when the render is over
-        let reader = BufReader::new(stderr);
-        for chunk in reader.split(b'\r') {
-            let Ok(bytes) = chunk else { continue };
-            let text = String::from_utf8_lossy(&bytes);
-            for line in text.split('\n') {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                // The error text of a failed render should not drown in thousands of stats lines
-                if !line.trim_start().starts_with("frame=") && !line.trim_start().starts_with("size=") {
-                    all_stderr.push_str(line);
-                    all_stderr.push('\n');
-                }
+    // The reading blocks until FFmpeg is done: keep it off the async runtime's threads
+    let progress_app = app.clone();
+    let all_stderr = tauri::async_runtime::spawn_blocking(move || {
+        let mut all_stderr = String::new();
+        if let Some(stderr) = stderr {
+            // FFmpeg ends its stats lines with a carriage return (the line is rewritten in place), other messages with a
+            // line feed: split on both, or the progress only arrives in one piece when the render is over
+            let reader = BufReader::new(stderr);
+            for chunk in reader.split(b'\r') {
+                let Ok(bytes) = chunk else { continue };
+                let text = String::from_utf8_lossy(&bytes);
+                for line in text.split('\n') {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    // The error text of a failed render should not drown in thousands of stats lines
+                    if !line.trim_start().starts_with("frame=") && !line.trim_start().starts_with("size=") {
+                        all_stderr.push_str(line);
+                        all_stderr.push('\n');
+                    }
 
-                if let Some((seconds, label)) = parse_progress_time(line) {
-                    let progress = ((seconds / total_secs) * 100.0).clamp(0.0, 99.0) as f32;
-                    let _ = app.emit(
-                        "export-progress",
-                        ExportProgressPayload {
-                            progress,
-                            time_str: label.clone(),
-                            status: format!("Render Yapılıyor: %{:.0} ({})", progress, label),
-                        },
-                    );
+                    if let Some((seconds, label)) = parse_progress_time(line) {
+                        let progress = ((seconds / total_secs) * 100.0).clamp(0.0, 99.0) as f32;
+                        let _ = progress_app.emit(
+                            "export-progress",
+                            ExportProgressPayload {
+                                progress,
+                                time_str: label.clone(),
+                                status: format!("Render Yapılıyor: %{:.0} ({})", progress, label),
+                            },
+                        );
+                    }
                 }
             }
         }
-    }
+        all_stderr
+    })
+    .await
+    .map_err(|e| format!("Export okuma görevi çöktü: {}", e))?;
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("FFmpeg işlemi beklenirken hata: {}", e))?;
+    let (exit, cancelled) = job.finish();
+    if cancelled {
+        // A killed render leaves a broken file behind
+        let _ = std::fs::remove_file(&output);
+        let _ = app.emit(
+            "export-progress",
+            ExportProgressPayload {
+                progress: 0.0,
+                time_str: "İptal".to_string(),
+                status: "Export iptal edildi.".to_string(),
+            },
+        );
+        return Err(CANCELLED_MESSAGE.to_string());
+    }
+    let status = exit.ok_or_else(|| "FFmpeg işlemi beklenirken hata oluştu.".to_string())?;
 
     if status.success() {
         let _ = app.emit(
@@ -296,6 +368,26 @@ mod tests {
         assert_eq!(parse_has_audio(with_audio), Some(true));
         assert_eq!(parse_has_audio(silent), Some(false));
         assert_eq!(parse_has_audio("No such file or directory"), None);
+    }
+
+    #[test]
+    fn ffmpeg_is_never_looked_up_relative_to_the_working_directory() {
+        let candidates = ffmpeg_candidates(Some(Path::new("C:\\Apps\\Mivid")));
+        assert!(candidates.iter().all(|c| c.is_absolute()), "{:?}", candidates);
+        assert_eq!(candidates[0], PathBuf::from("C:\\Apps\\Mivid\\ffmpeg.exe"));
+        assert!(ffmpeg_candidates(None).iter().all(|c| c.is_absolute()));
+    }
+
+    #[test]
+    fn picks_libx264_when_present_else_the_media_foundation_encoder() {
+        let gpl = " V....D libx264              libx264 H.264\n V....D h264_mf              H264 via MediaFoundation\n";
+        let lgpl = " V....D h264_mf              H264 via MediaFoundation\n V....D h264_nvenc NVIDIA\n";
+        let none = " V....D mpeg4                MPEG-4 part 2\n";
+        assert_eq!(pick_video_encoder(gpl), Some("libx264"));
+        assert_eq!(pick_video_encoder(lgpl), Some("h264_mf"));
+        assert_eq!(pick_video_encoder(none), None);
+        // a name that only contains the wanted one does not count
+        assert_eq!(pick_video_encoder(" V....D libx264rgb           x\n"), None);
     }
 
     #[test]
@@ -335,6 +427,7 @@ mod tests {
 pub fn run() {
     tauri::Builder::default()
         .manage(MediaAccess::default())
+        .manage(ExportJob::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -352,6 +445,8 @@ pub fn run() {
             open_project_dialog,
             select_export_path,
             run_ffmpeg_export,
+            cancel_export,
+            video_encoder,
             probe_media,
             open_file_location
         ])

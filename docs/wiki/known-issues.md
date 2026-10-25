@@ -41,7 +41,7 @@ Davranışsal sınırlar ve bilinen farklar. Kod kalitesi ve güvenlik bulgular�
 
 ## Ortam
 
-- **FFmpeg:** Rust önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanır. Proje köküne konan 2025-08 `ffmpeg.exe` fontconfig'siz derlenmiş; `drawtext` `fontfile=` verilmezse çöker (artık export `fontfile=` veriyor). Elle export testinde `C:\ffmpeg\bin` sürümü kullanılır.
+- **FFmpeg:** Rust önce uygulamanın yanındaki `ffmpeg.exe`'yi, yoksa `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2 essentials) kullanır. Paketlenecek LGPL build'de `h264_mf` kodlayıcısı kullanılır (kalite bitrate ile); bu yol gerçek LGPL binary ve kurulum paketiyle henüz denenmedi, yalnızca yerel GPL build'in `h264_mf`'iyle sentetik kaynakta. Proje köküne konan 2025-08 `ffmpeg.exe` fontconfig'siz derlenmiş; `drawtext` `fontfile=` verilmezse çöker (artık export `fontfile=` veriyor). Elle export testinde `C:\ffmpeg\bin` sürümü kullanılır.
 - **Rust derlenmiyor** bu makinede: Visual Studio C++ iş yükü (MSVC + Windows SDK) kurulu değil, `link.exe` yok. `npm run tauri dev`, `cargo test` ve `src-tauri` değişiklikleri buna bağlı. `npm run desktop` daha önce derlenmiş `app.exe`'yi açar ([[desktop-security]]).
 - Eski `app.exe` pencere başlığı yeniden derlenene kadar "CapCut Clone" kalabilir; `npm run desktop` ikisini de tanır. `tauri.conf.json` değişiklikleri (`center`, `minWidth`, CSP) yeniden derleme ister.
 

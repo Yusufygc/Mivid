@@ -1,7 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Mivid",
-  "version": "0.1.0",
   "identifier": "com.yusufygc.mivid",
   "build": {
     "frontendDist": "../dist",

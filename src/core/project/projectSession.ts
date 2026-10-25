@@ -71,7 +71,9 @@ export const loadAutosave = (): ProjectFile | null => {
   try {
     return parseProjectFile(JSON.parse(raw));
   } catch (e) {
-    Logger.warn('projectSession', 'Ignoring unreadable autosave', e);
+    // An autosave that does not pass validation never will: drop it instead of failing on every start
+    Logger.warn('projectSession', 'Dropping unreadable autosave', e);
+    clearAutosave();
     return null;
   }
 };

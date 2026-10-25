@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] INGEST | Denetim düzeltmeleri: Bulgu 5, 4, 3, 9
+Bulgu 5: `projectValidation.ts` aralık doğrulaması, bozuk otomatik kayıt temizliği. Bulgu 4: `export_job.rs`, `cancel_export`, iptalde yarım dosya silinir, `ExportModal` iptal düğmesi. Bulgu 3: göreli FFmpeg yolu kalktı, `video_encoder` komutu (libx264 yoksa `h264_mf`, guard `-c:v h264_mf` ve `-b:v` kabul eder), `tauri.bundle.conf.json` + `scripts/fetch-ffmpeg.ps1` + `npm run bundle` (LGPL sidecar; **denenmedi**). Bulgu 9: `.github/workflows/ci.yml` (**çalışmadı**, remote yok), sürüm tek kaynak (`Cargo.toml`). `cargo test --lib` 34/34, vitest 360. Bkz. [[desktop-security]], [[export-pipeline]], [[audit-report]], [[roadmap]].
+
 ## [2026-10-25] REVIEW | Native pencerede elle QA (CDP ile)
 Tauri penceresi WebView2 uzaktan hata ayıklama portuyla sürüldü ([[qa-playbook]] 5c): gerçek dosya diyalogları, 3 klip, 3 geçiş, 4 efekt, Konum Seç + export, proje kaydet/aç, saldırı denemeleri, üretim derlemesinde CSP. Üç hata bulundu ve düzeltildi: asset videosu canvas'ı kirletiyordu (`crossOrigin='anonymous'`: thumbnail/film şeridi/chroma), export ilerlemesi bitene kadar %5'te kalıyordu (FFmpeg `\r` satırları), `identifier` varsayılan olduğu için `tauri build` reddediyordu. Bkz. [[desktop-security]], [[known-issues]].
 

@@ -72,4 +72,4 @@ src-tauri/tests/fixtures/   # export_args.json: builder çıktısından üretile
 
 ## 4. Teknoloji
 
-Tauri v2 (Rust, `rfd` diyaloglar), React 19, TypeScript 6, Vite 8, Tailwind 3, Zustand 5, Vitest 4, oxlint. FFmpeg dış süreç olarak çalışır; paketlenmiyor ([[known-issues]], [[audit-report]] Bulgu 3).
+Tauri v2 (Rust, `rfd` diyaloglar), React 19, TypeScript 6, Vite 8, Tailwind 3, Zustand 5, Vitest 4, oxlint. FFmpeg dış süreç olarak çalışır; LGPL build sidecar olarak paketlenecek (`npm run bundle`, denenmedi) ([[known-issues]], [[audit-report]] Bulgu 3).

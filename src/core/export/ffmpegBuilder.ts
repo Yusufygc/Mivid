@@ -35,11 +35,20 @@ import { Logger } from '@/core/logger';
 export interface ExportOptions {
   outputPath: string;
   preset?: 'ultrafast' | 'fast' | 'medium' | 'slow';
+  /** H.264 encoder the FFmpeg at hand has (the desktop app asks it). Default libx264. */
+  videoEncoder?: 'libx264' | 'h264_mf';
+  /** Only used with h264_mf, like `8000k` */
   videoBitrate?: string;
   audioBitrate?: string;
   /** Folder with the font files text is drawn with (default: the Windows fonts folder). null = leave the font to FFmpeg. */
   fontDirectory?: string | null;
 }
+
+/** ~0.1 bit per pixel per frame (1080x1920 at 30 fps = 6200k), kept inside what the desktop guard allows */
+export const defaultVideoBitrate = (project: Pick<ProjectSettings, 'width' | 'height' | 'fps'>): string => {
+  const kbps = Math.round((project.width * project.height * project.fps * 0.1) / 1000);
+  return `${Math.min(Math.max(kbps, 1000), 100_000)}k`;
+};
 
 const escapeFFmpegText = (str: string): string => {
   return str
@@ -910,17 +919,13 @@ export class FFmpegCommandBuilder {
       args.push('-map', `[${finalAudioLabel}]`, '-c:a', 'aac', '-b:a', options.audioBitrate || '192k');
     }
 
-    args.push(
-      '-c:v',
-      'libx264',
-      '-preset',
-      options.preset || 'fast',
-      '-pix_fmt',
-      'yuv420p',
-      '-t',
-      exportDuration.toFixed(2),
-      options.outputPath
-    );
+    if (options.videoEncoder === 'h264_mf') {
+      // The LGPL FFmpeg build has no libx264. Media Foundation has no CRF or preset: the bitrate sets the quality.
+      args.push('-c:v', 'h264_mf', '-b:v', options.videoBitrate || defaultVideoBitrate(project));
+    } else {
+      args.push('-c:v', 'libx264', '-preset', options.preset || 'fast');
+    }
+    args.push('-pix_fmt', 'yuv420p', '-t', exportDuration.toFixed(2), options.outputPath);
 
     return { args, filterComplex: filterComplexStr, actualDuration: exportDuration };
   }

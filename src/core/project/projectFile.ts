@@ -1,6 +1,7 @@
 import { MediaAsset } from '@/types/asset';
 import { ProjectSettings } from '@/types/project';
 import { Clip, Track } from '@/types/timeline';
+import { LIMITS, validateAsset, validateClip, validateProjectSettings, validateTrackShape } from './projectValidation';
 
 export const PROJECT_FILE_VERSION = 1;
 
@@ -57,14 +58,32 @@ export const parseProjectFile = (raw: unknown): ProjectFile => {
   ) {
     throw new ProjectFileError('Proje ayarları okunamadı.');
   }
+  const settingsProblem = validateProjectSettings(project);
+  if (settingsProblem) throw new ProjectFileError(settingsProblem);
+
   if (!Array.isArray(tracks) || !tracks.every((t) => isObject(t) && typeof t.id === 'string' && Array.isArray(t.clips))) {
     throw new ProjectFileError('Kanal listesi okunamadı.');
   }
-  if (!tracks.every((t) => (t as unknown as Track).clips.every(isClip))) {
-    throw new ProjectFileError('Bozuk klip verisi bulundu.');
+  if (tracks.length > LIMITS.maxTracks) throw new ProjectFileError('Çok fazla kanal var.');
+  let clipCount = 0;
+  for (const t of tracks as unknown as Array<Record<string, unknown> & { clips: unknown[] }>) {
+    clipCount += t.clips.length;
+    if (clipCount > LIMITS.maxClips) throw new ProjectFileError('Çok fazla klip var.');
+    for (const c of t.clips) {
+      if (!isClip(c)) throw new ProjectFileError('Bozuk klip verisi bulundu.');
+      const clipProblem = validateClip(c as unknown as Record<string, unknown>);
+      if (clipProblem) throw new ProjectFileError(clipProblem);
+    }
+    const trackProblem = validateTrackShape(t);
+    if (trackProblem) throw new ProjectFileError(trackProblem);
   }
   if (!Array.isArray(assets) || !assets.every((a) => isObject(a) && typeof a.id === 'string' && typeof a.path === 'string')) {
     throw new ProjectFileError('Medya listesi okunamadı.');
+  }
+  if (assets.length > LIMITS.maxAssets) throw new ProjectFileError('Çok fazla medya dosyası var.');
+  for (const a of assets as unknown as Array<Record<string, unknown>>) {
+    const assetProblem = validateAsset(a);
+    if (assetProblem) throw new ProjectFileError(assetProblem);
   }
 
   return {

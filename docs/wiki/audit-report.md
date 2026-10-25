@@ -96,6 +96,7 @@ fn validate_args(args: &[String], output: &str) -> Result<(), String> {
 - **Bağımlılık:** Vite dev sunucusu için `connect-src ws://localhost:5173` gerekir; `devCsp` ayrı verilir.
 
 ### [🟠] 3. FFmpeg çalışma dizininden aranıyor ve kurulum paketine girmiyor
+- **Durum (2026-10-26):** Kod kısmı çözüldü: göreli yol kalktı (`ffmpeg_candidates`: uygulama klasörü, `C:\ffmpeg`, PATH), `video_encoder` komutu libx264 yoksa `h264_mf` seçer. Paketleme hazır ama denenmedi: `tauri.bundle.conf.json` (`externalBin`), `scripts/fetch-ffmpeg.ps1` (LGPL build indirir), `npm run bundle`. Kurulum paketi ve temiz makinede export elle denenmedi.
 - **Persona:** SRE / DevOps
 - **Dosya/Konum:** `src-tauri/src/lib.rs:6-22`
 - **Kategori:** Production
@@ -110,6 +111,7 @@ let candidate_paths = ["C:\\ffmpeg\\bin\\ffmpeg.exe", "C:\\ffmpeg\\ffmpeg.exe", 
 - **Bağımlılık:** FFmpeg lisansı (GPL/LGPL yapı) dağıtım şartlarını belirler; build seçimi lisansla birlikte yapılmalı.
 
 ### [🟠] 4. Export engelleyici çalışıyor: iptal yok, zaman aşımı yok, stdout okunmuyor
+- **Durum (2026-10-26):** Çözüldü (zaman aşımı hariç). `export_job.rs` + `cancel_export`, okuma `spawn_blocking`'de, stdout `Stdio::null()`, iptalde yarım dosya silinir, `ExportModal` iptal düğmesi. Rust birim testleri ve native pencerede iptal denendi.
 - **Persona:** SRE / DevOps
 - **Dosya/Konum:** `src-tauri/src/lib.rs:77-155`
 - **Kategori:** Production
@@ -128,6 +130,7 @@ for line in reader.lines() {
 - **Bağımlılık:** `ExportModal.tsx` iptal düğmesi ve ilerleme olayı değişir.
 
 ### [🟠] 5. Proje dosyası doğrulaması yüzeysel
+- **Durum (2026-10-26):** Çözüldü. `projectValidation.ts` (kare 16-16384, fps 1-240, süreler, klip/geçiş/keyframe/efekt/medya aralıkları, sayı sınırları), bozuk otomatik kayıt bir kez temizlenir. `projectValidation.test.ts`.
 - **Persona:** DevSecOps / QA
 - **Dosya/Konum:** `src/core/project/projectFile.ts:44-77`
 - **Kategori:** Güvenlik / Test
@@ -186,7 +189,7 @@ export const previewEngine = new PreviewEngine();
 - **Bağımlılık:** Bulgu 6-7 refactor'larından önce yazılmalı.
 
 ### [🟠] 9. CI/CD ve imzalama yok; `identifier` varsayılan
-- **Durum (2026-10-25):** `identifier` (`com.yusufygc.mivid`), yazar ve açıklama düzeltildi; `tauri build` artık çalışıyor. CI, imzalama, tek sürüm kaynağı ve geri alma stratejisi açık.
+- **Durum (2026-10-26):** `identifier`, yazar, açıklama düzeltildi; `tauri build` çalışıyor. CI iş akışı yazıldı (`.github/workflows/ci.yml`, GitHub'da henüz çalışmadı: remote yok); sürüm tek kaynak (`Cargo.toml`, `tauri.conf.json`'dan kalktı, `version.test.ts` npm ile eşitliği bekler). Kod imzalama ve geri alma stratejisi açık.
 - **Persona:** SRE / DevOps
 - **Dosya/Konum:** `.github/` (yok), `src-tauri/tauri.conf.json:5`, `src-tauri/Cargo.toml:4-6`
 - **Kategori:** Production

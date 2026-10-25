@@ -41,14 +41,14 @@ Betikten çağrılabilen "izin ver" komutu yoktur; izin yalnızca yerel diyalogl
 
 - `csp` / `devCsp`: `default-src 'self'`, betik `'self'` (dev'de vite için `'unsafe-inline'`), stil `'unsafe-inline'` (React `style=`), `img-src`/`media-src` `blob:` + `asset:` + `http://asset.localhost`, `connect-src` IPC (`ipc:`, `http://ipc.localhost`), `asset:`, `blob:`, `data:` (+ dev'de `ws://localhost:5173`).
 - `assetProtocol.scope: []`: kapsam çalışma anında `allow_file` ile genişler.
-- `minWidth 960`, `minHeight 600`, `center: true`. `identifier` hâlâ varsayılan `com.tauri.dev` ([[audit-report]] Bulgu 9).
+- `minWidth 960`, `minHeight 600`, `center: true`. `identifier` `com.yusufygc.mivid`; sürüm yalnızca `Cargo.toml`'da. `externalBin` (FFmpeg sidecar) yalnızca `tauri.bundle.conf.json`'da: ana yapılandırmada olsaydı binary yokken `tauri dev` ve `cargo test` derlenmezdi.
 - `tauri.conf.json` ve Rust derleme zamanında gömülür; değişince `npm run tauri dev` ile yeniden derleme gerekir.
 
 ## `export_guard::validate` kuralları
 
 1. En çok 4096 argüman; `-filter_complex` en çok 2 MB.
 2. Son argüman = seçilen çıktı yolu; uzantı `.mp4/.mov/.webm`; mutlak, `..` yok; `C:/Windows`, `C:/Program Files*`, `C:/ProgramData` yasak.
-3. İzinli bayraklar: `-y`, `-loop 1`, `-framerate`, `-t`, `-i`, `-filter_complex`, `-map [etiket]`, `-c:a aac`, `-b:a \d+k`, `-c:v libx264`, `-pix_fmt yuv420p`, `-preset <liste>`. Başkası reddedilir.
+3. İzinli bayraklar: `-y`, `-loop 1`, `-framerate`, `-t`, `-i`, `-filter_complex`, `-map [etiket]`, `-c:a aac`, `-b:a \d+k`, `-c:v libx264|h264_mf`, `-b:v \d{1,6}k` (1-200000k), `-pix_fmt yuv420p`, `-preset <liste>`. Başkası reddedilir.
 4. `-i` yolu mutlak, `..` yok, izin listesinde, (üretimde) diskte var.
 5. Filtre grafı tırnak/kaçış duyarlı ayrıştırılır; **yalnızca** `ALLOWED_FILTERS` içindeki filtre adları geçer (30 filtre; son eklenen `convolution`, keskinleştirme için). Dosya okuyan seçenekler (`textfile`, `file`, `filename`, `subfile`, `fontsdir`, `font_file`, `lut`, `lutfile`) reddedilir; `fontfile` yalnızca `C:/Windows/Fonts/` altından.
 
@@ -56,4 +56,10 @@ Builder yeni filtre/bayrak kullanırsa `guardFixtures.test.ts` snapshot'ı kır�
 
 ## Kalan risk
 
-Betik enjeksiyonu olursa izin listesindeki medya dosyalarını yine export edebilir; diskin geri kalanı kapalıdır. FFmpeg çalışma dizininden aranıyor ve paketlenmiyor (Bulgu 3); export engelleyici çalışıyor, iptal yok (Bulgu 4).
+Betik enjeksiyonu olursa izin listesindeki medya dosyalarını yine export edebilir; diskin geri kalanı kapalıdır. Export zaman aşımı yok (iptal elle).
+
+## FFmpeg bulma, iptal ve kodlayıcı
+
+- `ffmpeg_candidates`: uygulamanın yanındaki `ffmpeg.exe` (sidecar kurulum paketinde buraya iner), `C:\ffmpeg\bin`, `C:\ffmpeg`, sonra PATH. Hiçbir zaman çalışma dizinine göreli değil.
+- `ExportJob` (`export_job.rs`): tek çalışan export; `cancel_export` child'ı öldürür, yarım çıktıyı siler, arayüze `Export iptal edildi.` döner. Başlangıçta gelen iptal süreç bağlanır bağlanmaz uygulanır.
+- `video_encoder`: `ffmpeg -encoders` çıktısından `libx264`, yoksa `h264_mf` (Media Foundation) seçer, sonucu önbelleğe alır. Paketlenen LGPL build'de libx264 yoktur (GPL bulaşmasın diye); `h264_mf` `-preset` ve CRF bilmez, kalite `-b:v` ile (varsayılan ~0,1 bit/piksel/kare).

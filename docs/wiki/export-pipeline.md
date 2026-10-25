@@ -52,7 +52,7 @@ Ortak mantık `src/core/transitions/transitions.ts` (önizleme ile aynı sayıla
 - **Yazı tipi:** `drawtext` CSS yazı ailesini bilmez. `fonts.ts` ailenin ilk adını ve kalınlık/italik durumunu Windows yazı tipi dosyasına çevirir (`C:/Windows/Fonts/impact.ttf` vb.; bilinmeyen aile Arial) ve `fontfile='C\:/Windows/Fonts/…'` olarak yazılır. `fontDirectory: null` ise yazılmaz. Bu aynı zamanda proje köküne konan fontconfig'siz FFmpeg derlemesinin çökmesini önler.
 - **Metin kaçışı** (`escapeFFmpegText`): `\`, `'`, `:`, `%` kaçırılır, satır sonu boşluğa çevrilir (çok satırlı metin export'ta tek satır, [[known-issues]]).
 - **Sessiz medya:** masaüstünde export öncesi `probeUsedAssets` her kullanılan dosyayı `probe_media` ile sorar; `hasAudio: false` ise `[i:a]` istenmez (aksi halde "matches no streams" hatası).
-- **FFmpeg sürümü:** Rust önce `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2) sonra göreli yolları dener. Elle export testinde de bu sürüm kullanılır ([[qa-playbook]]).
+- **FFmpeg sürümü:** Rust önce uygulama klasöründeki `ffmpeg.exe`, sonra `C:\ffmpeg\bin\ffmpeg.exe` (9.0.2), sonra PATH'i dener. Kodlayıcı: `ExportOptions.videoEncoder` (`libx264` + `-preset`, ya da LGPL build için `h264_mf` + `-b:v`, varsayılan `defaultVideoBitrate`). Elle export testinde de bu sürüm kullanılır ([[qa-playbook]]).
 - **Performans:** animasyonlu opaklık ve bölge maskesi `geq` kullanır (1080p, 3 sn için yaklaşık 1,7 sn). 4K ve uzun kliplerde ölçülmedi.
 - **Sözleşme testi:** `src/core/export/guardFixtures.test.ts` her özellik için gerçek builder çıktısını `src-tauri/tests/fixtures/export_args.json`'a yazar; kullanılan filtre ve bayrak listesi snapshot'ta tutulur. Builder yeni filtre/bayrak kullanırsa bu test kırılır ve Rust `ALLOWED_FILTERS` listesi bilinçli güncellenir.
 

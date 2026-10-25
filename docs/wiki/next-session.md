@@ -1,6 +1,6 @@
 ﻿# Sonraki Oturum Planı
 
-Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam edileceği. Görev listesi: [[roadmap]]. Giriş: [[index]].
+Son güncelleme: 2026-10-26. Dal: `feature`. Bir sonraki oturumda nereden devam edileceği. Görev listesi: [[roadmap]]. Giriş: [[index]].
 
 ## 1. Şu anki durum
 
@@ -10,6 +10,7 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
 - Karar: bu projede REA / CapCut incelemesi yok; özgün, iş akışını kolaylaştıran özellikler yapılır. Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına, AI satırı olmadan ([[rules]]).
 - Denetim raporu: [[audit-report]] (18 bulgu; 1-2 kodlandı ve Rust testleri geçti, 17-18 kapandı).
 - **Native pencere denendi (2026-10-25)**: dev ve üretim derlemesi uzaktan sürüldü, CSP/asset/diyalog/export doğrulandı, üç hata düzeltildi (canvas kirlenmesi, ilerleme çubuğu, `identifier`); ayrıntı [[desktop-security]]. Commit bekliyor.
+- **Yeni (2026-10-26): denetim Bulgu 5, 4, 3 (kod), 9 (CI, tek sürüm)** kodlandı, testler yeşil (vitest 360, `cargo test --lib` 34/34), commit bekliyor ([[log]]). Denenmeyenler: `npm run bundle` (LGPL FFmpeg indirme + kurulum paketi + temiz makinede export), `.github/workflows/ci.yml` (remote yok), `h264_mf` ile gerçek Reels export'u (yalnızca sentetik kaynakta doğrulandı).
 - **Yeni (2026-10-23): geçişler ve efektler** kodlandı, testlendi, gerçek ffmpeg ve önizleme karşılaştırmasıyla doğrulandı, commit bekliyor ([[roadmap]] Faz 10, [[log]]). Rust `cargo test` 24/24 geçti (VS C++ kuruldu), `npm run tauri dev` açılıyor; `vite.config.ts`'e `watch.ignored: ['**/src-tauri/**']` eklendi (cargo çıktısı vite'ı EBUSY ile çökertiyordu).
 
 ## 2. Native pencerede elle bakılacaklar (kullanıcı; otomasyon yapılanları geçti)
@@ -27,7 +28,7 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
 
 ## 3. Derleme gerektirmeden yapılabilecekler (önerilen sıra)
 
-1. **Bulgu 5:** `parseProjectFile` aralık doğrulaması (fps, genişlik/yükseklik, süre, `NaN`), bozuk otomatik kaydı temizleme. En değerlisi.
+1. ~~Bulgu 5~~ yapıldı (2026-10-26).
 2. Bulgu 10-11: metadata okunamazsa hata bildir; `removeAsset` içinde `revokeObjectURL` ve referans kontrolü.
 3. Bulgu 13: Logger'ı dosyaya bağla, `console.*` çağrılarını `Logger` ile değiştir.
 4. Bulgu 16: hook bağımlılık uyarıları (önce sürükleme hesabını saf fonksiyona çıkarıp test et).
@@ -36,7 +37,7 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
 
 ## 4. Rust gerektirenler
 
-Bulgu 3 (FFmpeg sidecar), Bulgu 4 (export iptali), Bulgu 9 (`identifier`, CI), Bulgu 12 kalan kısmı, Tauri yerel kaydet diyaloğu (`save_project_dialog`), yeni yazı tipi dizini yapılandırması (Bulgu 15).
+Bulgu 3 paketini denemek (`npm run bundle`), Bulgu 9 kod imzalama ve geri alma stratejisi, Bulgu 12 kalan kısmı, Tauri yerel kaydet diyaloğu (`save_project_dialog`), yeni yazı tipi dizini yapılandırması (Bulgu 15).
 
 ## 5. Ortam notları
 

@@ -7,6 +7,9 @@ import { FFmpegCommandBuilder } from '@/core/export/ffmpegBuilder';
 import { Logger } from '@/core/logger';
 import { X, Download, Terminal, CheckCircle2, AlertTriangle, Copy, Check, Info, FolderOpen } from 'lucide-react';
 
+/** The error text the desktop app returns for a cancelled export (see `run_ffmpeg_export`) */
+const CANCELLED_MESSAGE = 'Export iptal edildi.';
+
 /** Stands in for the output file in the command preview of the web mode, where nothing is written */
 const WEB_PREVIEW_OUTPUT = 'output.mp4';
 
@@ -31,11 +34,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [commandInfo, setCommandInfo] = useState<{ args: string[]; filterComplex: string; actualDuration: number } | null>(null);
   const [isTauriEnv, setIsTauriEnv] = useState<boolean>(false);
   const [exportFinished, setExportFinished] = useState(false);
+  const [wasCancelled, setWasCancelled] = useState(false);
+  // The H.264 encoder of the FFmpeg the desktop app found (libx264, or h264_mf in the bundled LGPL build)
+  const [videoEncoder, setVideoEncoder] = useState<'libx264' | 'h264_mf'>('libx264');
   const outputPath = pickedOutputPath || WEB_PREVIEW_OUTPUT;
 
   useEffect(() => {
     const hasTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     setIsTauriEnv(Boolean(hasTauri));
+    if (hasTauri) {
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke<'libx264' | 'h264_mf'>('video_encoder'))
+        .then(setVideoEncoder)
+        // No usable encoder: the export itself reports it when started
+        .catch((err) => Logger.warn('ExportModal', 'Could not ask for the video encoder', err));
+    }
   }, []);
 
   // Listen to real-time progress from Tauri
@@ -95,6 +108,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       const result = FFmpegCommandBuilder.buildExportCommand(project, tracks, assets, {
         outputPath,
         preset,
+        videoEncoder,
       });
       setCommandInfo(result);
       setErrorMessage(null);
@@ -108,6 +122,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     try {
       setIsExporting(true);
       setExportFinished(false);
+      setWasCancelled(false);
       setProgress(5);
       setErrorMessage(null);
       setStatusMessage('FFmpeg Render İşlemi Başlatılıyor...');
@@ -117,6 +132,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       const result = FFmpegCommandBuilder.buildExportCommand(project, tracks, useAssetStore.getState().assets, {
         outputPath,
         preset,
+        videoEncoder,
       });
       setCommandInfo(result);
 
@@ -139,9 +155,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         setIsExporting(false);
       }
     } catch (err) {
-      Logger.error('ExportModal', 'Export error', err);
-      setErrorMessage((err as Error).message || String(err));
+      const message = (err as Error)?.message || String(err);
+      if (message.includes(CANCELLED_MESSAGE)) {
+        // The user stopped the render: not an error
+        Logger.info('ExportModal', 'Export cancelled');
+        setStatusMessage('Export iptal edildi. Yarım kalan dosya silindi.');
+        setWasCancelled(true);
+        setProgress(0);
+      } else {
+        Logger.error('ExportModal', 'Export error', err);
+        setErrorMessage(message);
+      }
       setIsExporting(false);
+    }
+  };
+
+  const handleCancelExport = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cancel_export');
+      setStatusMessage('Export iptal ediliyor…');
+    } catch (err) {
+      Logger.error('ExportModal', 'Could not cancel the export', err);
     }
   };
 
@@ -159,7 +194,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const copyCommand = () => {
     if (!commandInfo) {
       try {
-        const res = FFmpegCommandBuilder.buildExportCommand(project, tracks, assets, { outputPath, preset });
+        const res = FFmpegCommandBuilder.buildExportCommand(project, tracks, assets, { outputPath, preset, videoEncoder });
         setCommandInfo(res);
         const fullCmd = `ffmpeg ${res.args.map((a) => (a.includes(' ') || a.includes(';') ? `"${a}"` : a)).join(' ')}`;
         navigator.clipboard.writeText(fullCmd);
@@ -299,6 +334,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             </div>
           )}
 
+          {/* Cancelled export */}
+          {wasCancelled && !isExporting && (
+            <div className="bg-surface-light/60 border border-surface-border p-3 rounded-xl flex items-center gap-2 text-xs text-gray-300">
+              <Info className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <span>Export iptal edildi. Yarım kalan dosya silindi.</span>
+            </div>
+          )}
+
           {/* Error Message */}
           {errorMessage && (
             <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-lg flex items-start gap-2 text-xs text-rose-300">
@@ -338,10 +381,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
         {/* Modal Footer */}
         <div className="p-4 bg-surface-light/40 border-t border-surface-border flex items-center justify-end gap-3">
+          {isExporting && isTauriEnv && (
+            <button
+              onClick={handleCancelExport}
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-rose-300 border border-rose-500/40 hover:bg-rose-500/10 transition-all"
+            >
+              Export'u İptal Et
+            </button>
+          )}
           <button
             onClick={onClose}
             disabled={isExporting}
-            className="px-4 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-surface-light transition-all"
+            className="px-4 py-2 rounded-lg text-xs font-medium text-gray-300 hover:bg-surface-light transition-all disabled:opacity-40"
           >
             Kapat
           </button>

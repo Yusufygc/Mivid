@@ -107,7 +107,8 @@ pub fn validate(args: &[String], policy: &Policy) -> Result<(), GuardError> {
             }
             "-map" => check_map_label(value)?,
             "-c:a" => expect_value(flag, value, &["aac"])?,
-            "-c:v" => expect_value(flag, value, &["libx264"])?,
+            "-c:v" => expect_value(flag, value, &["libx264", "h264_mf"])?,
+            "-b:v" => check_video_bitrate(value)?,
             "-pix_fmt" => expect_value(flag, value, &["yuv420p"])?,
             "-preset" => expect_value(flag, value, ALLOWED_PRESETS)?,
             "-b:a" => check_audio_bitrate(value)?,
@@ -147,6 +148,17 @@ fn check_audio_bitrate(value: &str) -> Result<(), GuardError> {
         Ok(())
     } else {
         deny(format!("-b:a için geçersiz değer: {}", value))
+    }
+}
+
+/// `<digits>k` (kilobits), 1k-200000k: the quality knob of `h264_mf`, which has no CRF
+fn check_video_bitrate(value: &str) -> Result<(), GuardError> {
+    let digits = value.strip_suffix('k').unwrap_or("");
+    let in_range = digits.len() <= 6 && digits.chars().all(|c| c.is_ascii_digit()) && digits.parse::<u32>().map_or(false, |n| (1..=200_000).contains(&n));
+    if in_range {
+        Ok(())
+    } else {
+        deny(format!("-b:v için geçersiz değer: {}", value))
     }
 }
 
@@ -442,6 +454,18 @@ mod tests {
         let mut args = base_args("color=c=black:s=16x16[v]");
         args[8] = "libx265".to_string();
         assert!(check(&args).is_err());
+    }
+
+    #[test]
+    fn media_foundation_encoder_needs_a_sane_bitrate() {
+        let mut args = base_args("color=c=black:s=16x16[v]");
+        args[8] = "h264_mf".to_string();
+        args.splice(9..9, ["-b:v".to_string(), "8000k".to_string()]);
+        assert_eq!(check(&args), Ok(()));
+        for bad in ["8000", "0k", "999999k", "-1k", "8M", "k", "8000k;x"] {
+            args[10] = bad.to_string();
+            assert!(check(&args).is_err(), "{}", bad);
+        }
     }
 
     #[test]

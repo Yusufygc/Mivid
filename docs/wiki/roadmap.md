@@ -141,13 +141,14 @@ Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip 
 ## 🛡️ Faz 9: Denetim Düzeltmeleri ([[audit-report]])
 - [x] Bulgu 1-2: export komutu doğrulaması, CSP, dinamik asset izin listesi ([[desktop-security]]). **Rust derlenmedi, `cargo test` ve masaüstü denemesi bekliyor**
 - [x] Bulgu 18 (kısmen): `Co-Authored-By` satırları commit geçmişinden silindi; wiki ve `CLAUDE.md` iskeleti kuruldu
-- [ ] Bulgu 3: FFmpeg'i sidecar olarak paketle, göreli yolları kaldır
-- [ ] Bulgu 4: export iptali, `spawn_blocking`, stdout okunması
-- [ ] Bulgu 5: `parseProjectFile` aralık doğrulaması
+- [x] Bulgu 3 (kod): göreli yollar kalktı, `video_encoder` (libx264 / h264_mf). **Sidecar paketi hazır ama kurulum paketi denenmedi** (`npm run bundle`)
+- [x] Bulgu 4: export iptali (`export_job.rs`, `cancel_export`), `spawn_blocking`, stdout kapalı
+- [x] Bulgu 5: `parseProjectFile` aralık doğrulaması (`projectValidation.ts`)
 - [ ] Bulgu 6-7: `useTimelineStore` slice'lara, `previewEngine` parçalara bölünmesi
 - [ ] Bulgu 8: UI testleri, Rust testleri, coverage
 - [x] Bulgu 9 (kısmen): `identifier`, yazar, açıklama düzeltildi; üretim derlemesi (`tauri build --debug --no-bundle`) çalışıyor
-- [ ] Bulgu 9 kalanı: CI, imzalama, sürüm tek kaynak
+- [x] Bulgu 9: CI iş akışı (çalıştırılmadı), sürüm tek kaynak
+- [ ] Bulgu 9 kalanı: kod imzalama, geri alma stratejisi
 - [ ] Bulgu 10-17: sessiz varsayılanlar, nesne URL sızıntısı, `probe` temizliği, Logger dosyası, `pushVisualLayer` bölünmesi, platform yolları, hook uyarıları
 
 ---

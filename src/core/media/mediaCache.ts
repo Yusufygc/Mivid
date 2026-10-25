@@ -113,6 +113,8 @@ const grabFilmstrip = async (asset: MediaAsset): Promise<string | null> => {
 
   try {
     const video = document.createElement('video');
+    // Anonymous CORS: the Tauri asset protocol answers cross-origin, and without it the canvas that draws the video is tainted (thumbnails, film strip, chroma key fail)
+    video.crossOrigin = 'anonymous';
     video.src = asset.url;
     video.muted = true;
     video.preload = 'auto';

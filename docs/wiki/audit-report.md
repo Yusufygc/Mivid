@@ -186,6 +186,7 @@ export const previewEngine = new PreviewEngine();
 - **Bağımlılık:** Bulgu 6-7 refactor'larından önce yazılmalı.
 
 ### [🟠] 9. CI/CD ve imzalama yok; `identifier` varsayılan
+- **Durum (2026-10-25):** `identifier` (`com.yusufygc.mivid`), yazar ve açıklama düzeltildi; `tauri build` artık çalışıyor. CI, imzalama, tek sürüm kaynağı ve geri alma stratejisi açık.
 - **Persona:** SRE / DevOps
 - **Dosya/Konum:** `.github/` (yok), `src-tauri/tauri.conf.json:5`, `src-tauri/Cargo.toml:4-6`
 - **Kategori:** Production

@@ -170,6 +170,22 @@ async fn probe_media(access: State<'_, MediaAccess>, path: String) -> Result<Opt
     Ok(parse_has_audio(&String::from_utf8_lossy(&output.stderr)))
 }
 
+/// Seconds of output in an FFmpeg stats line (`frame=  90 fps=30 ... time=00:00:03.00 bitrate=...`) and the time text
+fn parse_progress_time(line: &str) -> Option<(f64, String)> {
+    let start = line.find("time=")? + 5;
+    let rest = &line[start..];
+    let end = rest.find(' ').unwrap_or(rest.len());
+    let value = &rest[..end];
+    let parts: Vec<&str> = value.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let hours = parts[0].parse::<f64>().ok()?;
+    let minutes = parts[1].parse::<f64>().ok()?;
+    let seconds = parts[2].parse::<f64>().ok()?;
+    Some((hours * 3600.0 + minutes * 60.0 + seconds, value.to_string()))
+}
+
 #[tauri::command]
 async fn run_ffmpeg_export(
     app: AppHandle,
@@ -217,38 +233,32 @@ async fn run_ffmpeg_export(
     let mut all_stderr = String::new();
 
     if let Some(stderr) = child.stderr.take() {
+        // FFmpeg ends its stats lines with a carriage return (the line is rewritten in place), other messages with a
+        // line feed: split on both, or the progress only arrives in one piece when the render is over
         let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                all_stderr.push_str(&l);
-                all_stderr.push('\n');
+        for chunk in reader.split(b'\r') {
+            let Ok(bytes) = chunk else { continue };
+            let text = String::from_utf8_lossy(&bytes);
+            for line in text.split('\n') {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                // The error text of a failed render should not drown in thousands of stats lines
+                if !line.trim_start().starts_with("frame=") && !line.trim_start().starts_with("size=") {
+                    all_stderr.push_str(line);
+                    all_stderr.push('\n');
+                }
 
-                // Parse time=HH:MM:SS.dd from FFmpeg progress output
-                if let Some(time_idx) = l.find("time=") {
-                    let time_substr = &l[time_idx + 5..];
-                    if let Some(end_idx) = time_substr.find(' ') {
-                        let time_val_str = &time_substr[..end_idx];
-                        let parts: Vec<&str> = time_val_str.split(':').collect();
-                        if parts.len() == 3 {
-                            if let (Ok(h), Ok(m), Ok(s)) = (
-                                parts[0].parse::<f64>(),
-                                parts[1].parse::<f64>(),
-                                parts[2].parse::<f64>(),
-                            ) {
-                                let current_sec = h * 3600.0 + m * 60.0 + s;
-                                let progress = ((current_sec / total_secs) * 100.0).min(99.0) as f32;
-
-                                let _ = app.emit(
-                                    "export-progress",
-                                    ExportProgressPayload {
-                                        progress,
-                                        time_str: time_val_str.to_string(),
-                                        status: format!("Render Yapılıyor: %{:.0} ({})", progress, time_val_str),
-                                    },
-                                );
-                            }
-                        }
-                    }
+                if let Some((seconds, label)) = parse_progress_time(line) {
+                    let progress = ((seconds / total_secs) * 100.0).clamp(0.0, 99.0) as f32;
+                    let _ = app.emit(
+                        "export-progress",
+                        ExportProgressPayload {
+                            progress,
+                            time_str: label.clone(),
+                            status: format!("Render Yapılıyor: %{:.0} ({})", progress, label),
+                        },
+                    );
                 }
             }
         }
@@ -286,6 +296,33 @@ mod tests {
         assert_eq!(parse_has_audio(with_audio), Some(true));
         assert_eq!(parse_has_audio(silent), Some(false));
         assert_eq!(parse_has_audio("No such file or directory"), None);
+    }
+
+    #[test]
+    fn reads_the_time_of_a_stats_line() {
+        let line = "frame=  150 fps= 61 q=29.0 size=    2048kB time=00:01:05.50 bitrate=1000kbits/s speed=2.1x";
+        assert_eq!(parse_progress_time(line), Some((65.5, "00:01:05.50".to_string())));
+        // at the very end of the line, and a line without stats
+        assert_eq!(parse_progress_time("x time=00:00:02.00").map(|r| r.0), Some(2.0));
+        assert_eq!(parse_progress_time("Input #0, mov"), None);
+        assert_eq!(parse_progress_time("time=N/A bitrate=N/A"), None);
+    }
+
+    #[test]
+    fn splits_carriage_return_stats_from_line_feed_messages() {
+        use std::io::{BufRead, Cursor};
+        let stream = b"Input #0, mov\nframe=1 time=00:00:01.00 x\rframe=2 time=00:00:02.00 x\rlast message\n";
+        let mut lines = Vec::new();
+        for chunk in Cursor::new(&stream[..]).split(b'\r') {
+            for line in String::from_utf8_lossy(&chunk.unwrap()).split('\n') {
+                if !line.is_empty() {
+                    lines.push(line.to_string());
+                }
+            }
+        }
+        assert_eq!(lines.len(), 4);
+        assert_eq!(parse_progress_time(&lines[1]).map(|r| r.0), Some(1.0));
+        assert_eq!(parse_progress_time(&lines[2]).map(|r| r.0), Some(2.0));
     }
 
     #[test]

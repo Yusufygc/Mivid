@@ -146,7 +146,8 @@ Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip 
 - [ ] Bulgu 5: `parseProjectFile` aralık doğrulaması
 - [ ] Bulgu 6-7: `useTimelineStore` slice'lara, `previewEngine` parçalara bölünmesi
 - [ ] Bulgu 8: UI testleri, Rust testleri, coverage
-- [ ] Bulgu 9: CI, `identifier`, sürüm tek kaynak
+- [x] Bulgu 9 (kısmen): `identifier`, yazar, açıklama düzeltildi; üretim derlemesi (`tauri build --debug --no-bundle`) çalışıyor
+- [ ] Bulgu 9 kalanı: CI, imzalama, sürüm tek kaynak
 - [ ] Bulgu 10-17: sessiz varsayılanlar, nesne URL sızıntısı, `probe` temizliği, Logger dosyası, `pushVisualLayer` bölünmesi, platform yolları, hook uyarıları
 
 ---

@@ -404,6 +404,7 @@ export class PreviewEngine {
     let image = this.imagePool.get(asset.id);
     if (!image) {
       image = new Image();
+      image.crossOrigin = 'anonymous'; // keeps the canvas readable (see the video below)
       image.decoding = 'async';
       if (asset.url) image.src = asset.url;
       this.imagePool.set(asset.id, image);
@@ -427,6 +428,8 @@ export class PreviewEngine {
     let video = this.videoPool.get(asset.id);
     if (!video) {
       video = document.createElement('video');
+      // Anonymous CORS: the Tauri asset protocol answers cross-origin, and without it the canvas that draws this element is tainted (thumbnails, film strip, chroma key fail)
+      video.crossOrigin = 'anonymous';
       video.src = asset.url;
       video.preload = 'auto';
       video.playsInline = true;

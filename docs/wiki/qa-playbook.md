@@ -56,11 +56,24 @@ Aynı projeyi önizlemede ve export'ta aynı anda karşılaştırmak için: sayf
 - Vite çalışırken `effectRenderer.ts` gibi çekirdek modülleri düzenlemek HMR ile motoru yeniden oluşturur; önizleme eski canvas'ta donar. Sayfayı yeniden yükleyin (blob medya gider, projeyi yeniden kurun).
 - Ekran görüntüsü uygulamadan gecikebilir: bir tıklamadan sonra 2 sn bekleyip yeniden alın ya da durumu JavaScript ile okuyun.
 - Klavye ok tuşları odak bir kutu ya da kaydırıcıdaysa playhead'i oynatmaz (kaydırıcıyı değiştirir); önce odağı bırakın (Escape) ya da "1 sn" düğmelerini kullanın.
-- Masaüstü (Tauri) penceresi bu yöntemle sürülemez; native pencereyi kullanıcı elle dener.
+- Masaüstü (Tauri) penceresi tarayıcı panelinde sürülemez; bunun için bölüm 5c.
+
+## 5c. Masaüstü (Tauri) penceresini sürmek
+
+Gerçek WebView2 penceresi, uzaktan hata ayıklama portuyla Chrome DevTools Protocol (CDP) üzerinden sürülebilir. Hem `npm run tauri dev` hem derlenmiş `app.exe` ile çalışır.
+
+1. Başlat: `$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"` sonra `npm run tauri dev` (ya da `app.exe`). Pencereyi büyütmek için `ShowWindow(hwnd, SW_MAXIMIZE)`; yerleşim pencere boyutuna göre değişir, tıklama koordinatlarını DOM'dan (`getBoundingClientRect`) okuyun.
+2. Bağlan: `http://127.0.0.1:9222/json` hedef listesi; Node 24'ün global `WebSocket`'iyle küçük bir istemci yeter (`Runtime.evaluate`, `Page.captureScreenshot`, `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`, `Log.enable` ile CSP ihlalleri). Gerçek fare olayları kullanıcı hareketi sayılır (File System Access seçicisi için gerekli).
+3. **Yerel diyaloglar** (`rfd`: medya seç, proje aç, konum seç; WebView2: kaydet) PowerShell ile sürülür: `#32770` sınıflı pencereyi bulup (`EnumWindows`, başlığı **ön ekle** eşle: Türkçe karakterler komut satırında bozulur) öne getir, `SendKeys` ile yolu yaz, Enter. Çoklu dosya: `"a.mp4" "b.mp4"` (dosya adlarını tırnaklı yaz).
+4. Ekran görüntüsü: sayfa için `Page.captureScreenshot`, masaüstü için `Graphics.CopyFromScreen` (açık diyalogları görmek için).
+5. **Dev CSP'yi uygulamaz:** `devUrl` (vite) ile açılan sayfaya Tauri CSP eklemez. CSP'yi denemek için `npm run tauri build -- --debug --no-bundle` ile derleyip `src-tauri/target/debug/app.exe`'yi çalıştırın (`csp` gömülü dist'e uygulanır; `eval` engellenir).
+6. Saldırı denemeleri sayfada `window.__TAURI_INTERNALS__.invoke(...)` ve `fetch('http://asset.localhost/...')` ile yapılır.
+
+**Tuzaklar:** `rfd` diyalogları ana iş parçacığını bloke eder; açıkken medya yükleme ve komutlar bekler. Yarım kalan bir WebView2 seçicisi ("File picker already active") sonraki `rfd` diyaloglarını da engeller: uygulamayı yeniden başlatın. WebView2 kaydet seçicisi `AppData` gibi sistem klasörlerinde "bu klasör sistem dosyaları içeriyor" diyerek reddeder; `Belgeler` gibi klasörleri kullanın. Her denemeden sonra açık diyalog bırakmayın (`{ESC}`).
 
 ## 6. Bu yöntemle doğrulanamayanlar
 
-Tauri diyalogları, `probe_media`, izin listesi, CSP etkisi, `minWidth/minHeight`, gerçek WebView2 davranışı. Bunlar `npm run desktop` ile elle denenir ([[next-session]], [[desktop-security]]).
+Tauri diyalogları, `probe_media`, izin listesi, CSP etkisi, `minWidth/minHeight`, gerçek WebView2 davranışı: bölüm 5c ile sürülür ([[desktop-security]]); native pencerede insan gözüyle bakılması gerekenler [[next-session]]'da.
 
 ## 7. Temizlik listesi
 

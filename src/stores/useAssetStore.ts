@@ -94,6 +94,7 @@ export const useAssetStore = create<AssetState>((set, get) => ({
       try {
         const inspectVideo = async () => {
           const video = document.createElement('video');
+          video.crossOrigin = 'anonymous'; // the Tauri asset protocol taints the thumbnail canvas without it
           video.src = url;
           video.preload = 'metadata';
           video.muted = true;

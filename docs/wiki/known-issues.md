@@ -9,7 +9,7 @@ Davranışsal sınırlar ve bilinen farklar. Kod kalitesi ve güvenlik bulgular�
 - **Çok satırlı metin:** export'ta tek satıra çevrilir (`escapeFFmpegText` `\n` → boşluk); önizleme çok satır çizer ([[export-pipeline]]).
 - **Blur paritesi:** kenar yumuşatma önizlemede bulanık maske, export'ta aynı sigmalı `gblur`'lu şekil; piksel düzeyinde birebir değil. Önizlemede blur canvas kenarında saydama solar, export'ta kenar kopyalanır (yalnızca tuval kenarındaki bölgelerde fark).
 - **Bulanık arka plan export'ta** klip opaklığını sabit değerle alır (opaklık keyframe'i arka plana uygulanmaz) ve slide/wipe geçişinde arka plan kaymaz. Chroma key'den önceki (anahtarsız) kaynağı kullanır.
-- **Chroma key önizlemesi:** 960 px'e indirilmiş yazılım işlemesi; kenarlarda yaklaşık 0,1 alfa farkı olabilir. Asset protokolünden gelen video canvas'ı kirletirse önizleme anahtarsız çizer, export çalışır.
+- **Chroma key önizlemesi:** 960 px'e indirilmiş yazılım işlemesi; kenarlarda yaklaşık 0,1 alfa farkı olabilir. Masaüstünde medya elemanları `crossOrigin='anonymous'` ile açıldığı için canvas kirlenmiyor; yine de kirlenirse önizleme anahtarsız çizer, export çalışır. Chroma'nın masaüstünde gerçek yeşil perdeyle denenmesi bekliyor.
 - **Dondurma karesi:** klip uzunluğu 2 sn başlar, sağ kenardan kırpılarak değişir. Kare, yarım saniyelik pencerede ilk kare seçilerek alınır (çok seyrek anahtar kareli dosyada birkaç kare kayabilir).
 - **Slide/wipe geçiş + keyframe x:** giriş ve çıkış ofsetleri toplanıyor; bu davranış ayrıca test edilmedi.
 - **Animasyonlu opaklık ve bölge maskesi `geq` ile:** 1080p, 3 sn için yaklaşık 1,7 sn; 4K ve uzun kliplerde ölçülmedi.
@@ -33,6 +33,11 @@ Davranışsal sınırlar ve bilinen farklar. Kod kalitesi ve güvenlik bulgular�
 - **Sessiz medya probe'u** yalnızca masaüstünde çalışır (`probe_media`); web modunda `hasAudio` bilinmez ve ses var sayılır.
 - **Metadata okunamazsa** içe aktarma sessizce 10 sn ve 1920x1080 varsayar ([[audit-report]] Bulgu 10).
 - **Blob olarak içe aktarılan medya** (tarayıcı modu) kaydedilen projede açılışta bulunamaz.
+
+## Masaüstü (WebView2)
+
+- **Proje kaydetme** WebView2'nin File System Access seçicisiyle olur: `AppData`, `Windows` gibi sistem klasörlerine ve bazı korumalı yerlere "bu klasör sistem dosyaları içeriyor" diyerek yazmaz; `Belgeler`/`Masaüstü` çalışır. Seçici kullanıcı hareketi ister (Ctrl+S ve düğme çalışır).
+- Dosya seçici açıkken (`rfd`, sync) pencere ve medya yükleme bekler; bu tasarım gereği, ama diyalog açık unutulursa uygulama donmuş gibi görünür.
 
 ## Ortam
 

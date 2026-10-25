@@ -4,6 +4,19 @@ Tauri/Rust tarafı (`src-tauri/src/`). Amaç: webview'de çalışan bir betik di
 
 > **Durum (2026-10-21):** kod yazıldı ve commit'li ama Rust **derlenmedi** (Visual Studio C++ iş yükü, `link.exe` kurulana kadar). `cargo test` ve masaüstü elle denemeleri [[next-session]]'da.
 
+## Doğrulama (2026-10-25, gerçek pencerede)
+
+`npm run tauri dev` ve `tauri build --debug --no-bundle` ile derlenen `app.exe` CDP ile sürüldü ([[qa-playbook]] 5c):
+- `run_ffmpeg_export` hedef seçilmeden reddedildi; `probe_media` ve `open_file_location` seçilmemiş dosya için reddedildi; `http://asset.localhost/C%3A%2FWindows%2Fwin.ini` **403**, `asset://` ve dış ağ engelli.
+- Üretim derlemesinde CSP etkin: `new Function(...)` `EvalError`, konsolda hiçbir CSP ihlali yok; thumbnail, film şeridi, önizleme, SVG filtreli keskinleştirme ve export çalışıyor.
+- Yerel diyaloglarla medya seçimi, proje açma (`open_project_dialog`: projedeki medya otomatik izinli), WebView2 kaydet seçicisi (Belgeler klasörüne), **Konum Seç** + export (3 klip, 3 geçiş, 4 efekt: 47 sn, 16,3 MB; ilerleme %3 → %34 → %57 → %88 → %100) ve kalıcı izin listesi sağlandı. `Klasörde Göster` (pozitif yol) denenmedi.
+- **Geliştirme CSP'si dev'de uygulanmaz** (Tauri `devUrl` sayfasına CSP eklemez); CSP yalnızca derlenmiş uygulamada denenebilir.
+
+### Bu denemede bulunup düzeltilenler
+- **Canvas kirlenmesi:** `asset.localhost` videosu CORS başlığı göndermiyor; `crossOrigin='anonymous'` olmadan canvas "tainted" oluyor ve thumbnail, film şeridi, chroma key önizlemesi sessizce çalışmıyordu. Medya elemanlarına `crossOrigin = 'anonymous'` verildi (`previewEngine`, `mediaCache`, `useAssetStore`); asset protokolü bu istekleri kabul ediyor.
+- **İlerleme çubuğu** export bitene kadar %5'te kalıyordu: FFmpeg istatistik satırlarını `\r` ile bitirir, Rust `lines()` yalnızca `\n`'de böler. Okuma `\r` ve `\n`'de bölünüyor (`parse_progress_time`, testli); hata metni istatistik satırlarıyla şişmiyor.
+- **`identifier`** `com.tauri.dev` iken `tauri build` reddediyordu: `com.yusufygc.mivid` yapıldı (AppData klasörü `com.yusufygc.mivid`; izin listesi yeniden birikir). `Cargo.toml` yazar/açıklama güncellendi ([[audit-report]] Bulgu 9'un bir parçası).
+
 ## Dosyalar
 
 | Dosya | Görev |

@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-25] REVIEW | Native pencerede elle QA (CDP ile)
+Tauri penceresi WebView2 uzaktan hata ayıklama portuyla sürüldü ([[qa-playbook]] 5c): gerçek dosya diyalogları, 3 klip, 3 geçiş, 4 efekt, Konum Seç + export, proje kaydet/aç, saldırı denemeleri, üretim derlemesinde CSP. Üç hata bulundu ve düzeltildi: asset videosu canvas'ı kirletiyordu (`crossOrigin='anonymous'`: thumbnail/film şeridi/chroma), export ilerlemesi bitene kadar %5'te kalıyordu (FFmpeg `\r` satırları), `identifier` varsayılan olduğu için `tauri build` reddediyordu. Bkz. [[desktop-security]], [[known-issues]].
+
 ## [2026-10-23] INGEST | Geçişler ve efektler: yeni özellikler
 Geçişlere süre/yön/eğri ve 4 yeni tür (iris, zoom, flaş, bulanık), gerçek wipe; efektlere ters mod, tüm kare, güç animasyonu, renk tonu, keskinleştir, vinyet. Yeni `core/transitions`, `TransitionPanel`, `EffectSettingsPanel`; `pushVisualLayer` baş/kuyruk ayrımı, `pushRegionEffect` dilimleri; Rust `ALLOWED_FILTERS` + `convolution`. Gerçek ffmpeg parite testleri ve gerçek Reels kaynaklarıyla tarayıcı QA'sı: önizleme ile export 2-3,3/255 fark. Bulgular: drawbox alfa'yı yok sayar, sınırlı aralık siyah/beyaz, `+-` ifadesi, canvas blur kenar koyulaşması, geçişte ripple eksikliği (düzeltildi). Bkz. [[export-pipeline]], [[preview-engine]], [[timeline-model]], [[known-issues]], [[qa-playbook]].
 

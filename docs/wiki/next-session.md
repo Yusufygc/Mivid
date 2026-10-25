@@ -9,9 +9,10 @@ Son güncelleme: 2026-10-21. Dal: `feature`. Bir sonraki oturumda nereden devam 
 - **Rust derleniyor ve testleri geçiyor** (`cargo test --lib`: 24/24). Native pencerede elle denemeler hâlâ bekliyor ([[desktop-security]]), aşağıda bölüm 2.
 - Karar: bu projede REA / CapCut incelemesi yok; özgün, iş akışını kolaylaştıran özellikler yapılır. Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına, AI satırı olmadan ([[rules]]).
 - Denetim raporu: [[audit-report]] (18 bulgu; 1-2 kodlandı ve Rust testleri geçti, 17-18 kapandı).
+- **Native pencere denendi (2026-10-25)**: dev ve üretim derlemesi uzaktan sürüldü, CSP/asset/diyalog/export doğrulandı, üç hata düzeltildi (canvas kirlenmesi, ilerleme çubuğu, `identifier`); ayrıntı [[desktop-security]]. Commit bekliyor.
 - **Yeni (2026-10-23): geçişler ve efektler** kodlandı, testlendi, gerçek ffmpeg ve önizleme karşılaştırmasıyla doğrulandı, commit bekliyor ([[roadmap]] Faz 10, [[log]]). Rust `cargo test` 24/24 geçti (VS C++ kuruldu), `npm run tauri dev` açılıyor; `vite.config.ts`'e `watch.ignored: ['**/src-tauri/**']` eklendi (cargo çıktısı vite'ı EBUSY ile çökertiyordu).
 
-## 2. Sıradaki adım: native pencerede elle deneme (kullanıcı)
+## 2. Native pencerede elle bakılacaklar (kullanıcı; otomasyon yapılanları geçti)
 
 1. `npm run tauri dev` ile aç (PATH'te `%USERPROFILE%\.cargo\bin`). Elle deneme:
    - medya içe aktar ve önizle (asset kapsamı `[]` iken `asset://` çalışıyor mu)

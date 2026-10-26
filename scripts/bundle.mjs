@@ -4,10 +4,10 @@
 //
 // Steps: bundled LGPL FFmpeg (downloaded once, scripts/fetch-ffmpeg.ps1) -> tauri build (NSIS) -> copy the setup
 // exe into ./installer. The update signature needs the private key: it is read from TAURI_SIGNING_PRIVATE_KEY(_PATH),
-// or from ~/.tauri/mivid.key when neither is set.
+// or from ~/.tauri/mivid.key when neither is set. A key path is turned into the key text the CLI needs.
 
 import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,12 +20,16 @@ if (!existsSync(sidecar)) run('npm run fetch:ffmpeg');
 
 const env = {};
 const defaultKey = join(homedir(), '.tauri', 'mivid.key');
-if (!process.env.TAURI_SIGNING_PRIVATE_KEY && !process.env.TAURI_SIGNING_PRIVATE_KEY_PATH) {
+if (!process.env.TAURI_SIGNING_PRIVATE_KEY && process.env.TAURI_SIGNING_PRIVATE_KEY_PATH) {
+  env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(process.env.TAURI_SIGNING_PRIVATE_KEY_PATH, 'utf-8');
+  env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? '';
+} else if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
   if (!existsSync(defaultKey)) {
     console.error(`Güncelleme imza anahtarı yok: TAURI_SIGNING_PRIVATE_KEY_PATH ayarla ya da ${defaultKey} koy.`);
     process.exit(1);
   }
-  env.TAURI_SIGNING_PRIVATE_KEY_PATH = defaultKey;
+  // The CLI wants the key text itself in TAURI_SIGNING_PRIVATE_KEY
+  env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(defaultKey, 'utf-8');
   env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? '';
 }
 

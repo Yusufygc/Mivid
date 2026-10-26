@@ -13,14 +13,16 @@ Kurulu uygulama kendini günceller. Kullanıcı yeni kurulum dosyası aramaz. Ba
 
 ## Yeni sürüm çıkarma
 
-1. `package.json` ve `src-tauri/Cargo.toml` içindeki `version` aynı değere çekilir (`version.test.ts` eşitliği denetler; `tauri.conf.json`'da sürüm yoktur).
-2. Commit, sonra:
-   ```bash
-   git tag v0.2.0
-   git push origin feature --tags
-   ```
-   Etiket, `package.json` sürümüyle `v` + sürüm olarak eşleşmezse iş akışı ilk adımda durur.
-3. Actions sekmesinde "Release" bitince Releases sayfasında `Mivid_0.2.0_x64-setup.exe` ve `latest.json` görünür. Kurulu uygulamalar bir sonraki açılışta teklif alır.
+Çalışma ağacı temizken (her şey commit'li):
+
+```bash
+npm run release -- patch      # 0.1.0 -> 0.1.1   (minor: 0.2.0, major: 1.0.0, ya da tam sürüm: 0.3.0)
+git push origin feature v0.1.1
+```
+
+`scripts/release.mjs` sırayla: sürümleri kontrol eder (`package.json` ve `Cargo.toml` aynı olmalı), `tsc` ve `vitest` çalıştırır, `package.json` + `package-lock.json` + `Cargo.toml` + `Cargo.lock` sürümünü yükseltir, `chore: sürüm X` commit'i ve `vX` etiketini oluşturur. **Push etmez**: etiket push'u yayını başlatır, o adım sende. `--dry-run` hiçbir şeyi değiştirmeden yeni sürümü gösterir.
+
+Etiket push edilince `release.yml` çalışır; etiket `package.json` sürümüyle eşleşmezse ilk adımda durur. Actions bitince Releases sayfasında `Mivid_X_x64-setup.exe` ve `latest.json` görünür; kurulu uygulamalar bir sonraki açılışta güncelleme teklif alır.
 
 ## Tek seferlik kurulum (yapıldı / yapılacak)
 
@@ -28,14 +30,17 @@ Kurulu uygulama kendini günceller. Kullanıcı yeni kurulum dosyası aramaz. Ba
 |---|---|
 | Güncelleme anahtar çifti (`~/.tauri/mivid.key` ve `.pub`) | Üretildi, şifresiz |
 | Public key `tauri.conf.json` `plugins.updater.pubkey` | Yazıldı |
-| Private key GitHub secret `TAURI_SIGNING_PRIVATE_KEY` | **Yapılmadı: elle eklenecek** (Settings > Secrets and variables > Actions). Değer: `~/.tauri/mivid.key` dosyasının tüm içeriği |
+| Private key GitHub secret `TAURI_SIGNING_PRIVATE_KEY` | Eklendi (kullanıcı, 2026-10-26) |
 | İlk kurulum paketi ve gerçek güncelleme döngüsü | **Denenmedi** |
 
 **Private key kaybolursa** kurulu uygulamalar bir daha güncellenemez: yeni anahtar + elle yeniden kurulum gerekir. Anahtar repoya girmez; yedeğini repo dışında tut.
+
+## Lisans
+
+Apache-2.0 (`LICENSE`, `NOTICE`). Kurulum paketindeki LGPL FFmpeg için `THIRD_PARTY_NOTICES.md`. Üçü de kurulu uygulamanın kaynak klasörüne kopyalanır (`bundle.resources`). Kurulum sihirbazında lisans onay sayfası yok: sessiz güncellemeyi bozmasın diye `licenseFile` kullanılmadı.
 
 ## Bilinen eksikler
 
 - **Windows kod imzalama yok.** Kurulumda SmartScreen "bilinmeyen yayıncı" uyarısı çıkar; "Yine de çalıştır" ile kurulur. Güncelleme imzası (minisign) bundan ayrıdır ve çalışır.
 - Yalnızca Windows x64 (NSIS). `bundle.targets` `["nsis"]`.
-- Açık kaynak lisansı dosyası (`LICENSE`) repoda yok. FFmpeg LGPL bildirimi için de bir `THIRD_PARTY` notu gerekir.
 - Geri alma: eski sürüm Release sayfasından elle kurulur; uygulama içi geri alma yok.

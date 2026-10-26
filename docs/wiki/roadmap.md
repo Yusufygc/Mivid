@@ -149,7 +149,7 @@ Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip 
 - [x] Bulgu 9 (kısmen): `identifier`, yazar, açıklama düzeltildi; üretim derlemesi (`tauri build --debug --no-bundle`) çalışıyor
 - [x] Bulgu 9: CI iş akışı (çalıştırılmadı), sürüm tek kaynak
 - [x] Otomatik güncelleme + GitHub Release iş akışı ([[release]]); **secret ve ilk release denenmedi**
-- [ ] Bulgu 9 kalanı: Windows kod imzalama, uygulama içi geri alma, `LICENSE` ve FFmpeg LGPL bildirimi
+- [ ] Bulgu 9 kalanı: Windows kod imzalama, uygulama içi geri alma (`LICENSE`/`NOTICE`/`THIRD_PARTY_NOTICES.md` eklendi: Apache-2.0)
 - [ ] Bulgu 10-17: sessiz varsayılanlar, nesne URL sızıntısı, `probe` temizliği, Logger dosyası, `pushVisualLayer` bölünmesi, platform yolları, hook uyarıları
 
 ---

@@ -2,6 +2,12 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] INGEST | Lisans: Apache-2.0
+`LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` (LGPL FFmpeg sidecar bildirimi), `Cargo.toml`/`package.json` lisans ve repository alanları, README lisans bölümü, `bundle.resources/copyright/publisher`. Bkz. [[release]].
+
+## [2026-10-26] INGEST | Sürüm betiği
+`scripts/release.mjs` + `npm run release -- patch|minor|major|x.y.z [--dry-run]`: sürümü dört dosyada yükseltir, `tsc` + `vitest` çalıştırır, commit ve etiket açar, push etmez. Sahte bir klonda gerçek çalıştırma denendi (dört dosya, commit, etiket doğru). Commit geçmişi taraması: sır yok. Bkz. [[release]].
+
 ## [2026-10-26] INGEST | Otomatik güncelleme ve GitHub sürümleri
 `origin` eklendi (github.com/Yusufygc/Mivid), `main` ve `feature` push edildi. `tauri-plugin-updater` + `tauri-plugin-process`, `UpdateBanner.tsx`, `tauri.conf.json` `plugins.updater` (public key, GitHub `latest.json`), `createUpdaterArtifacts`, hedef yalnızca NSIS, izinler `updater:default` ve `process:allow-restart`. `.github/workflows/release.yml` (`v*` etiketi). npm paketleri crate sürümlerine sabitlendi (`tauri` CLI uyumsuzlukta hata verir). Debug exe güncelleyici yapılandırmasıyla açılıyor. **Denenmedi:** private key GitHub secret'ı (elle eklenecek), release iş akışı, gerçek güncelleme. Bkz. [[release]], [[desktop-security]].
 

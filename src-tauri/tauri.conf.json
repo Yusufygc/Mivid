@@ -45,7 +45,14 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "copyright": "Copyright 2026 Yusufygc. Apache-2.0",
+    "publisher": "Yusufygc",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
   },
   "plugins": {
     "updater": {

@@ -91,3 +91,7 @@ Dokümantasyon `docs/wiki/` altındaki wiki'dedir; harita: [docs/wiki/index.md](
 - [Yol Haritası ve Görev Listesi](docs/wiki/roadmap.md)
 - [Sonraki Oturum Planı](docs/wiki/next-session.md)
 - [Denetim Raporu](docs/wiki/audit-report.md)
+
+## Lisans
+
+Apache License 2.0, bkz. [LICENSE](LICENSE). Üçüncü taraf bileşenler (özellikle kurulum paketindeki LGPL FFmpeg): [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

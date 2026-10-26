@@ -3,8 +3,8 @@ name = "app"
 version = "0.1.0"
 description = "Mivid video editor"
 authors = ["Yusuf"]
-license = ""
-repository = ""
+license = "Apache-2.0"
+repository = "https://github.com/Yusufygc/Mivid"
 edition = "2021"
 rust-version = "1.77.2"
 

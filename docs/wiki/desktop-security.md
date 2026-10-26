@@ -66,5 +66,6 @@ Betik enjeksiyonu olursa izin listesindeki medya dosyalarını yine export edebi
 ## FFmpeg bulma, iptal ve kodlayıcı
 
 - `ffmpeg_candidates`: uygulamanın yanındaki `ffmpeg.exe` (sidecar kurulum paketinde buraya iner), `C:\ffmpeg\bin`, `C:\ffmpeg`, sonra PATH. Hiçbir zaman çalışma dizinine göreli değil.
+- Her FFmpeg çağrısı `ffmpeg_command` ile başlar (`CREATE_NO_WINDOW`): bayrak yoksa Windows açılışta, her medyada ve export'ta konsol penceresi çakar.
 - `ExportJob` (`export_job.rs`): tek çalışan export; `cancel_export` child'ı öldürür, yarım çıktıyı siler, arayüze `Export iptal edildi.` döner. Başlangıçta gelen iptal süreç bağlanır bağlanmaz uygulanır.
 - `video_encoder`: `ffmpeg -encoders` çıktısından `libx264`, yoksa `h264_mf` (Media Foundation) seçer, sonucu önbelleğe alır. Paketlenen LGPL build'de libx264 yoktur (GPL bulaşmasın diye); `h264_mf` `-preset` ve CRF bilmez, kalite `-b:v` ile (varsayılan ~0,1 bit/piksel/kare).

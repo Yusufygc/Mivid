@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] REVIEW | Açılışta konsol penceresi yanıp sönüyordu
+Kurulu v0.2.2'de uygulama açılırken bir konsol penceresi çakıp sönüyordu. Sebep: açılışta `video_encoder` (ve her medyada `probe_media`, export'ta `run_ffmpeg_export`) `ffmpeg.exe`'yi çalıştırıyor; FFmpeg konsol programı olduğu için GUI uygulamadan açılınca Windows ona konsol penceresi veriyor. Düzeltme: `ffmpeg_command` yardımcısı `CREATE_NO_WINDOW` bayrağıyla başlatır. Doğrulama (A/B, pencere sayımı): eski release exe'de ffmpeg sürecine ait 1 görünür konsol penceresi, düzeltilmişte 0. Bkz. [[desktop-security]].
+
 ## [2026-10-26] REVIEW | FFmpeg sidecar kontrolü: v0.2.1 de başarısız
 v0.2.1 release'i `fetch-ffmpeg.ps1` GPL kontrolünde durdu: kontrol `--disable-libx264` ifadesini de yakalıyordu (BtbN LGPL build'i `libx264`'ü bilerek kapatır). Kontrol artık yalnızca `--enable-(gpl|libx264|libx265|nonfree)` arar ve `h264_mf` ister. Betik önce `src-tauri/binaries`, sonra bilgisayardaki FFmpeg'e (`C:fmpeg`, PATH; GPL olanı kullanmaz) bakar, yoksa indirir; `-Force` yeniden indirir. Bkz. [[release]].
 

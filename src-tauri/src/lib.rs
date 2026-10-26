@@ -27,6 +27,20 @@ fn ffmpeg_candidates(exe_dir: Option<&Path>) -> Vec<PathBuf> {
     candidates
 }
 
+/// A command for FFmpeg that opens no console window. FFmpeg is a console program: started from this windowed app
+/// without the flag, Windows flashes a console for as long as it runs (at startup, per probed file, per export).
+fn ffmpeg_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 fn find_ffmpeg_executable() -> String {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
     for candidate in ffmpeg_candidates(exe_dir.as_deref()) {
@@ -170,7 +184,7 @@ async fn probe_media(access: State<'_, MediaAccess>, path: String) -> Result<Opt
     if !access.is_allowed(&path) {
         return Err("Bu dosya medya havuzuna dosya diyaloğuyla eklenmemiş.".to_string());
     }
-    let output = Command::new(find_ffmpeg_executable())
+    let output = ffmpeg_command(find_ffmpeg_executable())
         .args(["-hide_banner", "-i", path.as_str()])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -192,7 +206,7 @@ async fn video_encoder() -> Result<String, String> {
     if let Some(name) = CHOSEN.get() {
         return Ok(name.clone());
     }
-    let output = Command::new(find_ffmpeg_executable())
+    let output = ffmpeg_command(find_ffmpeg_executable())
         .args(["-hide_banner", "-encoders"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -263,7 +277,7 @@ async fn run_ffmpeg_export(
         return Err("Bir export zaten çalışıyor.".to_string());
     }
 
-    let mut child = match Command::new(&ffmpeg_bin)
+    let mut child = match ffmpeg_command(&ffmpeg_bin)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

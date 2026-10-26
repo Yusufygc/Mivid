@@ -11,6 +11,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# The progress bar makes Invoke-WebRequest several times slower on big files
+$ProgressPreference = 'SilentlyContinue'
+# .NET calls instead of Get-FileHash/Expand-Archive: those cmdlets are missing when this runs under a pwsh-started
+# Windows PowerShell with a foreign PSModulePath (GitHub runners)
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = Split-Path -Parent $PSScriptRoot
 $target = Join-Path $root 'src-tauri\binaries\ffmpeg-x86_64-pc-windows-msvc.exe'
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ('mivid-ffmpeg-' + [guid]::NewGuid().ToString('N'))
@@ -21,14 +26,16 @@ try {
   Write-Host "Indiriliyor: $Url"
   Invoke-WebRequest -Uri $Url -OutFile $zip -UseBasicParsing
 
-  $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $stream = [System.IO.File]::OpenRead($zip)
+  try { $hash = [System.BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '') } finally { $stream.Dispose() }
   Write-Host "SHA256: $hash"
   if ($Sha256 -and ($hash -ne $Sha256.ToUpper())) {
     throw "SHA256 uyusmuyor (beklenen $Sha256). Dosya kullanilmadi."
   }
 
   $extracted = Join-Path $work 'x'
-  Expand-Archive -Path $zip -DestinationPath $extracted
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $extracted)
   $exe = Get-ChildItem -Path $extracted -Recurse -Filter ffmpeg.exe | Where-Object { $_.DirectoryName -like '*\bin' } | Select-Object -First 1
   if (-not $exe) { throw 'Arsivde bin\ffmpeg.exe bulunamadi.' }
 

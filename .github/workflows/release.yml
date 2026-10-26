@@ -35,7 +35,7 @@ jobs:
       - run: npx vitest run
 
       # LGPL FFmpeg, bundled as a sidecar next to the app (see scripts/fetch-ffmpeg.ps1)
-      - run: npm run fetch:ffmpeg
+      - run: pwsh -NoProfile -File scripts/fetch-ffmpeg.ps1
 
       - uses: tauri-apps/tauri-action@v0
         env:

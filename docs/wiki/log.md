@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] INGEST | Uygulama ikonu, NSIS ayarları, release düzeltmesi
+Mivid ikonu (koyu kutu, cam göbeği M, pembe playhead) `tauri icon` ile tüm boyutlara üretildi (`icon.ico` 16-256 px; Windows'ta pencere ve görev çubuğu ikonu `bundle.icon` içindeki ilk `.ico`), `public/favicon.svg` aynı tasarım. NSIS: Türkçe/İngilizce, `currentUser`. `npm run bundle` (`scripts/bundle.mjs`) kurulum exe'sini `installer/` klasörüne koyar. v0.2.0 release'i `Get-FileHash` bulunamadığı için başarısız oldu (CI'da `powershell` 5.1 modül yolu): `fetch-ffmpeg.ps1` .NET'e geçti, workflow `pwsh` çağırıyor; düzeltme v0.2.1 ile. `v0.2.0` etiketi hatalı commit'te kaldı. Bkz. [[release]].
+
 ## [2026-10-26] INGEST | Lisans: Apache-2.0
 `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` (LGPL FFmpeg sidecar bildirimi), `Cargo.toml`/`package.json` lisans ve repository alanları, README lisans bölümü, `bundle.resources/copyright/publisher`. Bkz. [[release]].
 

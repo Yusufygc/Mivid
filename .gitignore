@@ -86,3 +86,6 @@ desktop.ini
 
 # Bundled FFmpeg (scripts/fetch-ffmpeg.ps1 downloads it)
 src-tauri/binaries/
+
+# Local installer output (npm run bundle)
+installer/

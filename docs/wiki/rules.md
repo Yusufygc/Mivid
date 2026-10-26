@@ -57,7 +57,7 @@ npm run build      # üretim derlemesi
 - Dil Türkçe; ı, ğ, ü, ş, ö, ç, İ, Ğ, Ü, Ş, Ö, Ç ASCII'ye çevrilmez.
 - **Commit mesajına ya da PR açıklamasına `Co-Authored-By`, "Generated with", robot emojisi gibi AI/asistan referansı eklenmez.**
 - Biçim: kısa emir kipinde özet satırı (`feat:`, `fix:`, `chore:`), gerekirse boş satırdan sonra madde madde gövde.
-- Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına; push yapılmaz.
+- Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına; push yalnızca kullanıcı isteyince (`origin` = github.com/Yusufygc/Mivid, açık kaynak: repoya sır, anahtar, kişisel medya girmez).
 - Commit öncesi `git status` gözden geçirilir; geçici QA dosyaları (`.claude/launch.json`, `public/qa-*`, `zz_*.test.ts`) dahil edilmez.
 
 ## 5.1 Genel prensipler

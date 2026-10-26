@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] INGEST | Otomatik güncelleme ve GitHub sürümleri
+`origin` eklendi (github.com/Yusufygc/Mivid), `main` ve `feature` push edildi. `tauri-plugin-updater` + `tauri-plugin-process`, `UpdateBanner.tsx`, `tauri.conf.json` `plugins.updater` (public key, GitHub `latest.json`), `createUpdaterArtifacts`, hedef yalnızca NSIS, izinler `updater:default` ve `process:allow-restart`. `.github/workflows/release.yml` (`v*` etiketi). npm paketleri crate sürümlerine sabitlendi (`tauri` CLI uyumsuzlukta hata verir). Debug exe güncelleyici yapılandırmasıyla açılıyor. **Denenmedi:** private key GitHub secret'ı (elle eklenecek), release iş akışı, gerçek güncelleme. Bkz. [[release]], [[desktop-security]].
+
 ## [2026-10-26] INGEST | Denetim düzeltmeleri: Bulgu 5, 4, 3, 9
 Bulgu 5: `projectValidation.ts` aralık doğrulaması, bozuk otomatik kayıt temizliği. Bulgu 4: `export_job.rs`, `cancel_export`, iptalde yarım dosya silinir, `ExportModal` iptal düğmesi. Bulgu 3: göreli FFmpeg yolu kalktı, `video_encoder` komutu (libx264 yoksa `h264_mf`, guard `-c:v h264_mf` ve `-b:v` kabul eder), `tauri.bundle.conf.json` + `scripts/fetch-ffmpeg.ps1` + `npm run bundle` (LGPL sidecar; **denenmedi**). Bulgu 9: `.github/workflows/ci.yml` (**çalışmadı**, remote yok), sürüm tek kaynak (`Cargo.toml`). `cargo test --lib` 34/34, vitest 360. Bkz. [[desktop-security]], [[export-pipeline]], [[audit-report]], [[roadmap]].
 

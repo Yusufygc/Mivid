@@ -58,6 +58,11 @@ Builder yeni filtre/bayrak kullanırsa `guardFixtures.test.ts` snapshot'ı kır�
 
 Betik enjeksiyonu olursa izin listesindeki medya dosyalarını yine export edebilir; diskin geri kalanı kapalıdır. Export zaman aşımı yok (iptal elle).
 
+## Güncelleyici
+
+- Yetenekler: `core:default`, `updater:default`, `process:allow-restart` (yalnızca yeniden başlatma). Güncelleme indirme/kurma Rust'ta çalışır; CSP `connect-src` değişmedi.
+- Paket imzası minisign: public key `tauri.conf.json`'da, private key repo dışında (`~/.tauri/mivid.key`) ve GitHub secret'ında. İmzası uymayan paket kurulmaz. Ayrıntı: [[release]].
+
 ## FFmpeg bulma, iptal ve kodlayıcı
 
 - `ffmpeg_candidates`: uygulamanın yanındaki `ffmpeg.exe` (sidecar kurulum paketinde buraya iner), `C:\ffmpeg\bin`, `C:\ffmpeg`, sonra PATH. Hiçbir zaman çalışma dizinine göreli değil.

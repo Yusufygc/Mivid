@@ -148,7 +148,8 @@ Proje boyunca tamamlanan, devam eden ve planlanan geliştirme maddelerini takip 
 - [ ] Bulgu 8: UI testleri, Rust testleri, coverage
 - [x] Bulgu 9 (kısmen): `identifier`, yazar, açıklama düzeltildi; üretim derlemesi (`tauri build --debug --no-bundle`) çalışıyor
 - [x] Bulgu 9: CI iş akışı (çalıştırılmadı), sürüm tek kaynak
-- [ ] Bulgu 9 kalanı: kod imzalama, geri alma stratejisi
+- [x] Otomatik güncelleme + GitHub Release iş akışı ([[release]]); **secret ve ilk release denenmedi**
+- [ ] Bulgu 9 kalanı: Windows kod imzalama, uygulama içi geri alma, `LICENSE` ve FFmpeg LGPL bildirimi
 - [ ] Bulgu 10-17: sessiz varsayılanlar, nesne URL sızıntısı, `probe` temizliği, Logger dosyası, `pushVisualLayer` bölünmesi, platform yolları, hook uyarıları
 
 ---

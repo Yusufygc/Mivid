@@ -12,6 +12,7 @@ Mivid, Tauri v2 + React 19 + TypeScript + FFmpeg ile yazılmış bir masaüstü 
 - [[preview-engine]]: canvas önizleme, zamanlama, çizim sırası, tutamaçlar, önizleme/export farkları
 - [[export-pipeline]]: FFmpeg `filter_complex` üretimi, yazı tipleri, ses, sözleşme testi
 - [[desktop-security]]: Rust komutları, izin listesi, argüman doğrulayıcı, CSP
+- [[release]]: sürüm etiketi, GitHub Release, otomatik güncelleme, imza anahtarı
 
 ## Durum ve plan
 - [[next-session]]: şu anki durum, sıradaki adım, yapılabilecek işler

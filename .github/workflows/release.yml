@@ -1,0 +1,51 @@
+name: Release
+
+# A `v*` tag builds the installer, signs the update and publishes a GitHub release with `latest.json`,
+# the file installed apps read to find the new version. Steps for a release: docs/wiki/release.md
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME, package.json version $version" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npx vitest run
+
+      # LGPL FFmpeg, bundled as a sidecar next to the app (see scripts/fetch-ffmpeg.ps1)
+      - run: npm run fetch:ffmpeg
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Mivid ${{ github.ref_name }}
+          releaseBody: Kurulum için Mivid_*_x64-setup.exe dosyasını indir. Kurulu sürüm kendini günceller.
+          releaseDraft: false
+          prerelease: false
+          args: --config src-tauri/tauri.bundle.conf.json

@@ -19,7 +19,7 @@ npx vitest run && npx tsc -b && npx oxlint && npm run build
 Rust (`src-tauri`) için `cargo test`; bu makinede VS C++ iş yükü kurulana kadar derlenemiyor (`docs/wiki/next-session.md`).
 
 ## Sabit kurallar
-- Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına; **push yok**. Mesaj Türkçe, `Co-Authored-By` / "Generated with" **yok**.
+- Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına; push yalnızca kullanıcı isteyince (`origin` = github.com/Yusufygc/Mivid). Mesaj Türkçe, `Co-Authored-By` / "Generated with" **yok**.
 - Bu projede REA / CapCut incelemesi yapma; özgün, iş akışını kolaylaştıran özellikler öner.
 - Rapor önce, uygulama onaydan sonra. Doğrulanamayanı doğrulanmış gibi sunma.
 - Geçici QA dosyalarını (`.claude/launch.json`, `public/qa-*`, `zz_*.test.ts`) commit etme.

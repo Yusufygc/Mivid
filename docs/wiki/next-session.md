@@ -4,7 +4,7 @@ Son güncelleme: 2026-10-26. Dal: `feature`. Bir sonraki oturumda nereden devam 
 
 ## 1. Şu anki durum
 
-- `feature` dalı temiz; son commit'ler: `6c8b386` (export doğrulaması, CSP, izin listesi), `1209dac` (QA düzeltme turu), `e9ad6e0` (ürün adı Mivid). Hiçbir şey push edilmedi. Remote tanımlı değil.
+- `feature` dalı temiz; son commit'ler: `6c8b386` (export doğrulaması, CSP, izin listesi), `1209dac` (QA düzeltme turu), `e9ad6e0` (ürün adı Mivid). `origin` = github.com/Yusufygc/Mivid; `main` ve `feature` push edildi (2026-10-26), sonraki push yalnızca kullanıcı isteyince.
 - Testler: 355 birim testi (29'u gerçek ffmpeg isteyen opt-in parite testi, `FFMPEG_PARITY=1`), `npx tsc -b`, `npm run build` temiz; `oxlint` 3 eski uyarı ([[known-issues]]).
 - **Rust derleniyor ve testleri geçiyor** (`cargo test --lib`: 24/24). Native pencerede elle denemeler hâlâ bekliyor ([[desktop-security]]), aşağıda bölüm 2.
 - Karar: bu projede REA / CapCut incelemesi yok; özgün, iş akışını kolaylaştıran özellikler yapılır. Commit yalnızca kullanıcı isteyince, yalnızca `feature` dalına, AI satırı olmadan ([[rules]]).

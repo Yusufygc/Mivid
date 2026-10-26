@@ -2,6 +2,9 @@
 
 En yeni girdi en üstte. Biçim ve işlem tipleri: [[rules]]. Harita: [[index]].
 
+## [2026-10-26] REVIEW | Gerçek kaynaklarla komik Reels: "Borsada Bir Gün"
+Kurulu v0.2.3 uygulaması hata ayıklama portuyla açılıp (CDP) 9 meme klibinden 31,8 sn'lik 9:16 bir kurgu yapıldı: proje dosyası (`.json`) üretilip uygulamanın **Proje Aç** diyaloğuyla açıldı, önizlemede kontrol edildi, **Dışa Aktar** diyaloğuyla masaüstüne yazıldı (h264_mf, 14 sn, 24 MB). Kullanılanlar: 8 geçiş türü, Impact altyazılar, kare dışı kaynaklarda `backdropBlur`, renk tonu ve vinyet efekti, filigran. Çıktı ffprobe ve kare örnekleriyle doğrulandı. Bulgu: proje açılırken efekt klipleri "eksik medya" sayılıyordu (`findMissingAssetIds` yalnızca metni atlıyordu); efekt de atlanır, test eklendi. Bkz. [[qa-playbook]], [[known-issues]].
+
 ## [2026-10-26] REVIEW | Açılışta konsol penceresi yanıp sönüyordu
 Kurulu v0.2.2'de uygulama açılırken bir konsol penceresi çakıp sönüyordu. Sebep: açılışta `video_encoder` (ve her medyada `probe_media`, export'ta `run_ffmpeg_export`) `ffmpeg.exe`'yi çalıştırıyor; FFmpeg konsol programı olduğu için GUI uygulamadan açılınca Windows ona konsol penceresi veriyor. Düzeltme: `ffmpeg_command` yardımcısı `CREATE_NO_WINDOW` bayrağıyla başlatır. Doğrulama (A/B, pencere sayımı): eski release exe'de ffmpeg sürecine ait 1 görünür konsol penceresi, düzeltilmişte 0. Bkz. [[desktop-security]].
 

@@ -107,10 +107,10 @@ describe('projectFile', () => {
     expect(isAbsoluteMediaPath('a.mp4')).toBe(false);
   });
 
-  it('reports clips whose media is gone (blob imports, unknown assets) but not text clips', () => {
+  it('reports clips whose media is gone (blob imports, unknown assets) but not text or effect clips', () => {
     const file = serializeProject(
       project,
-      [track([clip('c1', 'a1'), clip('c2', 'a2'), clip('c3', 'ghost'), clip('t', 'text-1', 'text')])],
+      [track([clip('c1', 'a1'), clip('c2', 'a2'), clip('c3', 'ghost'), clip('t', 'text-1', 'text'), clip('e', 'effect-1', 'effect')])],
       [nativeAsset, blobAsset]
     );
     expect(findMissingAssetIds(file).sort()).toEqual(['a2', 'ghost']);

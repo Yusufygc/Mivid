@@ -104,7 +104,8 @@ export const findMissingAssetIds = (file: ProjectFile): string[] => {
   const missing = new Set<string>();
   for (const track of file.tracks) {
     for (const clip of track.clips) {
-      if (clip.type === 'text') continue;
+      // Text and effect clips draw themselves: they have no media file
+      if (clip.type === 'text' || clip.type === 'effect') continue;
       const asset = known.get(clip.assetId);
       if (!asset || !isAbsoluteMediaPath(asset.path)) missing.add(clip.assetId);
     }
